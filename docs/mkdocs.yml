@@ -4,6 +4,8 @@ docs_dir: .
 nav:
   - Home: index.md
   - Design: design/DESIGN.md
+  - Modules:
+      - Configuration System: modules/config.md
 theme:
   name: material
 markdown_extensions:

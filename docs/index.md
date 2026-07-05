@@ -11,5 +11,6 @@ An AI Software Engineering Copilot that helps developers understand large codeba
 Each module (see the Design Document's "Module Planning" section) gets its own page here as it's implemented:
 
 - Module 1: Project Initialization — this scaffold.
+- [Module 2: Configuration System](modules/config.md) — settings hierarchy, `.env` loading, fail-fast validation.
 
 More pages are added as subsequent modules land.
