@@ -6,6 +6,7 @@ nav:
   - Design: design/DESIGN.md
   - Modules:
       - Configuration System: modules/config.md
+      - Logging: modules/logging.md
 theme:
   name: material
 markdown_extensions:

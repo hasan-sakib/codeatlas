@@ -12,5 +12,6 @@ Each module (see the Design Document's "Module Planning" section) gets its own p
 
 - Module 1: Project Initialization — this scaffold.
 - [Module 2: Configuration System](modules/config.md) — settings hierarchy, `.env` loading, fail-fast validation.
+- [Module 3: Logging](modules/logging.md) — structlog processor chain, correlation IDs, redaction, Celery signal hook.
 
 More pages are added as subsequent modules land.
