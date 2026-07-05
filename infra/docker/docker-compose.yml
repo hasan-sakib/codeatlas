@@ -1,0 +1,105 @@
+# Base service definitions: names, images, networks, named volumes, health
+# checks. No dev/prod-specific ports, bind mounts, or resource limits here —
+# see docker-compose.dev.yml / docker-compose.prod.yml (added in Module 19).
+
+networks:
+  codeatlas_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  ollama_models:
+  codeatlas_storage:
+
+services:
+  backend-api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    env_file:
+      - ../../.env
+    networks:
+      - codeatlas_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    # Placeholder command: the Celery app doesn't exist until the
+    # Background Jobs / Queue infrastructure module is implemented.
+    # Replace with: celery -A app.workers.celery_worker worker -Q chat,indexing
+    command: ["sh", "-c", "echo 'worker placeholder - no Celery app yet' && sleep infinity"]
+    env_file:
+      - ../../.env
+    networks:
+      - codeatlas_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: codeatlas
+      POSTGRES_PASSWORD: codeatlas
+      POSTGRES_DB: codeatlas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - codeatlas_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codeatlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - codeatlas_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - codeatlas_net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - codeatlas_net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/11434'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

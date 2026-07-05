@@ -1,0 +1,12 @@
+site_name: CodeAtlas
+site_description: AI Software Engineering Copilot powered by RAG
+docs_dir: .
+nav:
+  - Home: index.md
+  - Design: design/DESIGN.md
+theme:
+  name: material
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - tables

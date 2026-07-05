@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+.next/
+frontend/dist/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/
