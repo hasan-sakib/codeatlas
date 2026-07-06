@@ -45,6 +45,29 @@ class GitSettings(BaseSettings):
     max_repo_size_mb: int = 500
 
 
+class ChunkingSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CHUNKING__", extra="forbid")
+
+    max_chunk_tokens: int = 512
+    min_chunk_tokens: int = 64
+    merge_target_tokens: int = 256
+
+
+class EmbeddingSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="EMBEDDING__", extra="forbid")
+
+    # The Hugging Face repo actually loaded for inference.
+    model_name_or_path: str = "BAAI/bge-m3"
+    # The cache-key namespace (see text_normalizer.py) — deliberately
+    # separate from model_name_or_path so bumping the embedding version
+    # (forcing cache invalidation) doesn't require changing which weights
+    # are loaded, and vice versa.
+    model_id: str = "bge-m3:v1"
+    batch_size: int = 32
+    use_fp16: bool = True
+    cache_ttl_seconds: int = 60 * 60 * 24 * 30  # 30 days — long-lived, see docs
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -79,6 +102,8 @@ class Settings(BaseSettings):
     # environment at each Settings() construction, matching the
     # clear_settings_cache()-then-monkeypatch test pattern used elsewhere.
     git: GitSettings = Field(default_factory=GitSettings)
+    chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
+    embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
 
 
 @lru_cache(maxsize=1)

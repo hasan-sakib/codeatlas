@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.conversation_repository import ConversationRepository
+from app.domain.ports.embedding_port import EmbeddingPort
 from app.domain.ports.file_repository import FileRepository
 from app.domain.ports.git_port import GitPort
 from app.domain.ports.indexing_job_repository import IndexingJobRepository
@@ -46,6 +48,8 @@ from app.infrastructure.db.repositories.sqlalchemy_workspace_repository import (
     SqlAlchemyWorkspaceRepository,
 )
 from app.infrastructure.db.session import get_db_session
+from app.infrastructure.embeddings.bge_m3_adapter import BgeM3Adapter
+from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
 from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
 from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
 
@@ -104,3 +108,17 @@ def provide_git_port() -> GitPort:
 
 def provide_indexing_task_dispatcher() -> IndexingTaskDispatcherPort:
     return NullIndexingTaskDispatcher()
+
+
+@lru_cache(maxsize=1)
+def provide_embedding_port() -> EmbeddingPort:
+    # Cached singleton: BgeM3Adapter lazily loads the (large) model into
+    # its own instance state on first use, so a fresh instance per
+    # request would reload the model every single time.
+    cache = RedisEmbeddingCache(get_redis_client())
+    return BgeM3Adapter(cache, get_settings().embedding)
+
+
+def clear_embedding_port_cache() -> None:
+    """Test-only helper, mirrors clear_settings_cache/clear_redis_client_cache."""
+    provide_embedding_port.cache_clear()
