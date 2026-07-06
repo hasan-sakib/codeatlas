@@ -17,7 +17,7 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/app/
-        additional_dependencies: [pydantic>=2.9]
+        additional_dependencies: [pydantic>=2.9, "redis>=5.2,<6"]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

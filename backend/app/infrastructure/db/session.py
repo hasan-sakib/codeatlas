@@ -18,6 +18,14 @@ def _get_cached_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return get_sessionmaker(engine)
 
 
+def clear_sessionmaker_cache() -> None:
+    """Test-only helper, mirrors app.core.config.clear_settings_cache.
+    Required whenever a test changes DATABASE__URL and needs a fresh
+    engine bound to its own event loop (see Module 4's integration-test
+    lesson: asyncpg connections can't cross event loops)."""
+    _get_cached_sessionmaker.cache_clear()
+
+
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     """FastAPI dependency: one session per request, committed on success,
     rolled back on exception, always closed. Celery tasks use their own

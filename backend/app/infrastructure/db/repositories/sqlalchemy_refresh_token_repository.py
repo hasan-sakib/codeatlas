@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 
 from app.domain.entities.refresh_token import RefreshToken
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
@@ -61,3 +63,17 @@ class SqlAlchemyRefreshTokenRepository(SqlAlchemyRepository, RefreshTokenReposit
             )
             .values(revoked_at=datetime.now(UTC))
         )
+
+    async def revoke_if_active(self, token_id: UUID) -> bool:
+        result = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                update(RefreshTokenModel)
+                .where(
+                    RefreshTokenModel.id == token_id,
+                    RefreshTokenModel.revoked_at.is_(None),
+                )
+                .values(revoked_at=datetime.now(UTC))
+            ),
+        )
+        return result.rowcount > 0

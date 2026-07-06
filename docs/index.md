@@ -14,5 +14,6 @@ Each module (see the Design Document's "Module Planning" section) gets its own p
 - [Module 2: Configuration System](modules/config.md) — settings hierarchy, `.env` loading, fail-fast validation.
 - [Module 3: Logging](modules/logging.md) — structlog processor chain, correlation IDs, redaction, Celery signal hook.
 - [Module 4: Database](modules/database.md) — domain entities/ports, SQLAlchemy models & repositories for all 9 tables, Alembic migrations, unit of work.
+- [Module 5: Authentication](modules/auth.md) — JWT access tokens, rotating opaque refresh tokens, Redis-backed access-token blacklist, and a Postgres row-lock fix for a genuine refresh-token-rotation race condition.
 
 More pages are added as subsequent modules land.

@@ -10,8 +10,11 @@ from app.domain.ports.indexing_job_repository import IndexingJobRepository
 from app.domain.ports.message_repository import MessageRepository
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.repository_repository import RepositoryRepository
+from app.domain.ports.token_blacklist import TokenBlacklistPort
 from app.domain.ports.user_repository import UserRepository
 from app.domain.ports.workspace_repository import WorkspaceRepository
+from app.infrastructure.cache.redis_client import get_redis_client
+from app.infrastructure.cache.redis_token_blacklist import RedisTokenBlacklistAdapter
 from app.infrastructure.db.repositories.sqlalchemy_chunk_repository import (
     SqlAlchemyChunkRepository,
 )
@@ -80,3 +83,7 @@ def provide_conversation_repository(session: DbSession) -> ConversationRepositor
 
 def provide_message_repository(session: DbSession) -> MessageRepository:
     return SqlAlchemyMessageRepository(session)
+
+
+def provide_token_blacklist() -> TokenBlacklistPort:
+    return RedisTokenBlacklistAdapter(get_redis_client())

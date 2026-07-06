@@ -1,0 +1,6 @@
+from typing import Protocol
+
+
+class TokenBlacklistPort(Protocol):
+    async def blacklist(self, jti: str, ttl_seconds: int) -> None: ...
+    async def is_blacklisted(self, jti: str) -> bool: ...

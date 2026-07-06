@@ -8,6 +8,7 @@ nav:
       - Configuration System: modules/config.md
       - Logging: modules/logging.md
       - Database: modules/database.md
+      - Authentication: modules/auth.md
 theme:
   name: material
 markdown_extensions:
