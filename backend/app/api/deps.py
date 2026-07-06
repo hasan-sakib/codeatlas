@@ -5,6 +5,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.application.use_cases.workspaces.get_workspace import GetWorkspaceUseCase
 from app.core.config import get_settings
 from app.core.di import (
     provide_token_blacklist,
@@ -14,6 +15,7 @@ from app.core.di import (
 from app.core.security import decode_access_token
 from app.domain.entities.user import User
 from app.domain.entities.workspace import Workspace
+from app.domain.exceptions import WorkspaceNotFoundError
 from app.domain.ports.token_blacklist import TokenBlacklistPort
 from app.domain.ports.user_repository import UserRepository
 from app.domain.ports.workspace_repository import WorkspaceRepository
@@ -65,11 +67,12 @@ async def require_workspace_access(
     team RBAC is future work. Returns 404 (not 403) whether the workspace
     doesn't exist or simply isn't the caller's, so an authenticated user
     can't distinguish "not found" from "not yours" (avoids leaking which
-    workspace IDs exist)."""
-    workspace = await workspace_repo.get_by_id(workspace_id)
-    if workspace is None or workspace.owner_id != user.id:
+    workspace IDs exist). The actual check lives in GetWorkspaceUseCase —
+    this is a thin FastAPI-specific translation of its exception."""
+    try:
+        return await GetWorkspaceUseCase(workspace_repo).execute(workspace_id, user.id)
+    except WorkspaceNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found",
-        )
-    return workspace
+        ) from exc

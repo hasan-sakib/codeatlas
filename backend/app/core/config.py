@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, SecretStr
+from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +38,13 @@ class OllamaSettings(BaseSettings):
     request_timeout_seconds: float = 120.0
 
 
+class GitSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="GIT__", extra="forbid")
+
+    clone_timeout_seconds: float = 120.0
+    max_repo_size_mb: int = 500
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -66,6 +73,12 @@ class Settings(BaseSettings):
     redis: RedisSettings
     ollama: OllamaSettings
     security: SecuritySettings
+    # All fields have sane defaults, unlike the other nested settings —
+    # explicit default_factory so a deployment need not set any GIT__ env
+    # var at all. Factory (not a bare instance) so it re-reads the
+    # environment at each Settings() construction, matching the
+    # clear_settings_cache()-then-monkeypatch test pattern used elsewhere.
+    git: GitSettings = Field(default_factory=GitSettings)
 
 
 @lru_cache(maxsize=1)

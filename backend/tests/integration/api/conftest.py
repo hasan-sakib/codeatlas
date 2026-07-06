@@ -39,3 +39,19 @@ async def api_client(postgres_container, redis_container, monkeypatch: pytest.Mo
     clear_settings_cache()
     clear_sessionmaker_cache()
     clear_redis_client_cache()
+
+
+def register_and_login(
+    client: TestClient, email: str, password: str = "correct-horse-battery"
+) -> str:
+    """Registers + logs in a fresh user, returning a bearer access token —
+    shared by every integration test that needs an authenticated caller.
+    """
+    register_resp = client.post(
+        "/api/v1/auth/register", json={"email": email, "password": password}
+    )
+    assert register_resp.status_code == 201, register_resp.text
+    login_resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login_resp.status_code == 200, login_resp.text
+    access_token: str = login_resp.json()["access_token"]
+    return access_token

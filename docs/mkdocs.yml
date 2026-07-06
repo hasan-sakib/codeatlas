@@ -9,6 +9,7 @@ nav:
       - Logging: modules/logging.md
       - Database: modules/database.md
       - Authentication: modules/auth.md
+      - Repository Management: modules/repository_management.md
 theme:
   name: material
 markdown_extensions:

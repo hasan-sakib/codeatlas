@@ -3,10 +3,13 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.conversation_repository import ConversationRepository
 from app.domain.ports.file_repository import FileRepository
+from app.domain.ports.git_port import GitPort
 from app.domain.ports.indexing_job_repository import IndexingJobRepository
+from app.domain.ports.indexing_task_dispatcher import IndexingTaskDispatcherPort
 from app.domain.ports.message_repository import MessageRepository
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.repository_repository import RepositoryRepository
@@ -43,6 +46,8 @@ from app.infrastructure.db.repositories.sqlalchemy_workspace_repository import (
     SqlAlchemyWorkspaceRepository,
 )
 from app.infrastructure.db.session import get_db_session
+from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
+from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
 
 # The single FastAPI-dependency-annotated session type every repository
 # provider below builds on — one session per request (see session.py).
@@ -87,3 +92,15 @@ def provide_message_repository(session: DbSession) -> MessageRepository:
 
 def provide_token_blacklist() -> TokenBlacklistPort:
     return RedisTokenBlacklistAdapter(get_redis_client())
+
+
+def provide_git_port() -> GitPort:
+    git_settings = get_settings().git
+    return GitPythonAdapter(
+        clone_timeout_seconds=git_settings.clone_timeout_seconds,
+        max_repo_size_mb=git_settings.max_repo_size_mb,
+    )
+
+
+def provide_indexing_task_dispatcher() -> IndexingTaskDispatcherPort:
+    return NullIndexingTaskDispatcher()
