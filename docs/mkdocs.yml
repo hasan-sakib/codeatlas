@@ -10,6 +10,7 @@ nav:
       - Database: modules/database.md
       - Authentication: modules/auth.md
       - Repository Management: modules/repository_management.md
+      - Parser Engine: modules/parser_engine.md
 theme:
   name: material
 markdown_extensions:

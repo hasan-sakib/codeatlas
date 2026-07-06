@@ -16,5 +16,6 @@ Each module (see the Design Document's "Module Planning" section) gets its own p
 - [Module 4: Database](modules/database.md) — domain entities/ports, SQLAlchemy models & repositories for all 9 tables, Alembic migrations, unit of work.
 - [Module 5: Authentication](modules/auth.md) — JWT access tokens, rotating opaque refresh tokens, Redis-backed access-token blacklist, and a Postgres row-lock fix for a genuine refresh-token-rotation race condition.
 - [Module 6: Repository Management](modules/repository_management.md) — workspace/repository registration use cases and an SSRF-hardened Git cloning adapter, with the authoritative IP-allowlist check deferred to clone time (not registration time) to avoid a TOCTOU gap.
+- [Module 7: Parser Engine](modules/parser_engine.md) — a plugin-registered tree-sitter parser for Python/JS/TS with symbol/import extraction, verified empirically against the actual installed tree-sitter API rather than assumed.
 
 More pages are added as subsequent modules land.
