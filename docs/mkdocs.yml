@@ -14,6 +14,7 @@ nav:
       - Chunking Engine: modules/chunking_engine.md
       - Embedding Pipeline: modules/embedding_pipeline.md
       - Vector Store: modules/vector_store.md
+      - Retriever: modules/retriever.md
 theme:
   name: material
 markdown_extensions:

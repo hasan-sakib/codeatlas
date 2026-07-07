@@ -5,6 +5,7 @@ from fastapi import Depends
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.services.retrieval_service import RetrievalService
 from app.core.config import get_settings
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.conversation_repository import ConversationRepository
@@ -147,3 +148,15 @@ def clear_vector_store_cache() -> None:
     """Test-only helper, mirrors clear_settings_cache/clear_redis_client_cache."""
     provide_vector_store.cache_clear()
     _get_qdrant_client.cache_clear()
+
+
+def provide_retrieval_service(session: DbSession) -> RetrievalService:
+    # Not cached: chunk_repository/file_repository are session-scoped
+    # (fresh per request), unlike the process-wide embedding/vector-store
+    # singletons this composes.
+    return RetrievalService(
+        embedding_port=provide_embedding_port(),
+        vector_store_port=provide_vector_store(),
+        chunk_repository=provide_chunk_repository(session),
+        file_repository=provide_file_repository(session),
+    )

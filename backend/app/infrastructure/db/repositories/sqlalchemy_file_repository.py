@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -45,6 +46,12 @@ class SqlAlchemyFileRepository(SqlAlchemyRepository, FileRepository):
     async def get_by_id(self, file_id: UUID) -> File | None:
         model = await self.session.get(FileModel, file_id)
         return _to_entity(model) if model else None
+
+    async def get_by_ids(self, file_ids: Sequence[UUID]) -> list[File]:
+        if not file_ids:
+            return []
+        result = await self.session.execute(select(FileModel).where(FileModel.id.in_(file_ids)))
+        return [_to_entity(m) for m in result.scalars().all()]
 
     async def get_by_repository_and_path(self, repository_id: UUID, path: str) -> File | None:
         result = await self.session.execute(
