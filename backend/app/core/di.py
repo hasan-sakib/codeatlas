@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -17,6 +18,7 @@ from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.repository_repository import RepositoryRepository
 from app.domain.ports.token_blacklist import TokenBlacklistPort
 from app.domain.ports.user_repository import UserRepository
+from app.domain.ports.vector_store_port import VectorStorePort
 from app.domain.ports.workspace_repository import WorkspaceRepository
 from app.infrastructure.cache.redis_client import get_redis_client
 from app.infrastructure.cache.redis_token_blacklist import RedisTokenBlacklistAdapter
@@ -52,6 +54,7 @@ from app.infrastructure.embeddings.bge_m3_adapter import BgeM3Adapter
 from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
 from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
 from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
+from app.infrastructure.vectorstore.qdrant_vector_store import QdrantVectorStore
 
 # The single FastAPI-dependency-annotated session type every repository
 # provider below builds on — one session per request (see session.py).
@@ -122,3 +125,25 @@ def provide_embedding_port() -> EmbeddingPort:
 def clear_embedding_port_cache() -> None:
     """Test-only helper, mirrors clear_settings_cache/clear_redis_client_cache."""
     provide_embedding_port.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def _get_qdrant_client() -> AsyncQdrantClient:
+    settings = get_settings().qdrant
+    return AsyncQdrantClient(
+        url=str(settings.url),
+        api_key=settings.api_key.get_secret_value() if settings.api_key else None,
+        timeout=int(settings.timeout_seconds),
+    )
+
+
+@lru_cache(maxsize=1)
+def provide_vector_store() -> VectorStorePort:
+    settings = get_settings().qdrant
+    return QdrantVectorStore(_get_qdrant_client(), collection_prefix=settings.collection_prefix)
+
+
+def clear_vector_store_cache() -> None:
+    """Test-only helper, mirrors clear_settings_cache/clear_redis_client_cache."""
+    provide_vector_store.cache_clear()
+    _get_qdrant_client.cache_clear()

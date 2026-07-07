@@ -19,5 +19,6 @@ Each module (see the Design Document's "Module Planning" section) gets its own p
 - [Module 7: Parser Engine](modules/parser_engine.md) — a plugin-registered tree-sitter parser for Python/JS/TS with symbol/import extraction, verified empirically against the actual installed tree-sitter API rather than assumed.
 - [Module 8: Chunking Engine](modules/chunking_engine.md) — AST-aware code chunking and heading/paragraph-aware markdown chunking against real BGE-M3 token budgets, with an honest empirical finding about the limits of the merge-pass invariant.
 - [Module 9: Embedding Pipeline](modules/embedding_pipeline.md) — the real BGE-M3 dense+sparse embedding adapter with a Redis cache, verified by hand against the actual downloaded model, with the checked-in test suite deliberately kept model-free.
+- [Module 10: Vector Store](modules/vector_store.md) — the Qdrant adapter with structurally-enforced multi-tenant isolation and collection/alias versioning, built against the real `qdrant-client` 1.18 API after discovering the design's assumed `.search()` method no longer exists.
 
 More pages are added as subsequent modules land.
