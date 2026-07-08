@@ -20,7 +20,22 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime
 
+# GitPython (used by the repository-cloning adapter) shells out to a real
+# `git` binary and fails at import time — not just at clone time — if
+# it's missing, so this isn't optional even though nothing at container
+# startup obviously "needs" git.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --create-home app
+
+# Without a persistent, explicitly-located cache dir, every container
+# recreation re-downloads BGE-M3/the reranker's multi-GB weights from
+# HuggingFace from scratch — verified directly: a fresh container took
+# several minutes on first embedding call. infra/docker/docker-compose.yml
+# mounts a named volume here.
+RUN mkdir -p /data/hf-cache && chown app:app /data/hf-cache
+ENV HF_HOME=/data/hf-cache
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}" \
@@ -28,6 +43,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 WORKDIR /app
 COPY app ./app
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 USER app
 

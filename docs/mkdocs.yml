@@ -22,6 +22,7 @@ nav:
       - Streaming: modules/streaming.md
       - REST API: modules/rest_api.md
       - Frontend: modules/frontend.md
+      - Deployment: modules/deployment.md
 theme:
   name: material
 markdown_extensions:

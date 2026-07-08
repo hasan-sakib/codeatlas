@@ -26,6 +26,9 @@ class FakeEmbeddingPort:
         self.queries.append(text)
         return EmbeddingResult(dense=self.dense, sparse=self.sparse, model_id="fake:v1")
 
+    async def warm_up(self) -> None:
+        pass
+
 
 class FakeVectorStore:
     def __init__(

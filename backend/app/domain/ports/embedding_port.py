@@ -11,3 +11,9 @@ class EmbeddingPort(Protocol):
         ...
 
     async def embed_query(self, text: str) -> EmbeddingResult: ...
+
+    async def warm_up(self) -> None:
+        """Eagerly loads the underlying model, so the (potentially very
+        slow) first-use cost is paid at process startup rather than on a
+        real request — see app/main.py's lifespan."""
+        ...

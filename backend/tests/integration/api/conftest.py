@@ -22,6 +22,10 @@ async def api_client(postgres_container, redis_container, monkeypatch: pytest.Mo
     monkeypatch.setenv("QDRANT__URL", "http://localhost:6333")
     monkeypatch.setenv("OLLAMA__BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("SECURITY__JWT_SECRET_KEY", "integration-test-secret-key-value")
+    # Skips the real BGE-M3 warm-up in app.main's lifespan — this fixture
+    # is the only place in the suite that uses `with TestClient(...)`,
+    # which is what actually triggers ASGI lifespan events.
+    monkeypatch.setenv("ENVIRONMENT", "test")
 
     clear_settings_cache()
     clear_sessionmaker_cache()

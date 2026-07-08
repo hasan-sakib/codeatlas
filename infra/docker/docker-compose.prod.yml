@@ -18,6 +18,12 @@ networks:
     internal: true
 
 services:
+  # 4g, not the more typical 2g: BGE-M3 alone is ~2.2GB resident in fp32
+  # (forced off fp16 on CPU — see bge_m3_adapter.py) plus the reranker
+  # model plus Python/torch/uvicorn overhead. Verified directly: 2g
+  # OOM-killed backend-api (silently — Compose reports the container as
+  # merely "restarting", not obviously "out of memory") on the very
+  # first real embedding call in this exact topology.
   backend-api:
     restart: unless-stopped
     ports:
@@ -27,7 +33,7 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 2g
+          memory: 4g
 
   worker:
     restart: unless-stopped
@@ -36,7 +42,7 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 2g
+          memory: 4g
 
   frontend:
     restart: unless-stopped

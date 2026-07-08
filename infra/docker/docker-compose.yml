@@ -31,6 +31,12 @@ volumes:
   postgres_data:
   qdrant_data:
   ollama_models:
+  # BGE-M3/reranker HuggingFace weights (several GB) — without this,
+  # every container recreation re-downloads them from scratch on first
+  # embedding call, verified directly to take several minutes. Mounted
+  # at $HF_HOME (set in backend/Dockerfile) for both backend-api and
+  # worker, since either could trigger a model load.
+  model_cache:
   # Reserved for the indexing pipeline's cloned-repository storage
   # (StoragePort, per DESIGN.md §13) — not yet built (no storage module,
   # no configurable storage root exists in app/core/config.py today), so
@@ -49,6 +55,8 @@ services:
       QDRANT__URL: http://qdrant:6333
       REDIS__URL: redis://redis:6379/0
       OLLAMA__BASE_URL: http://ollama:11434
+    volumes:
+      - model_cache:/data/hf-cache
     networks:
       - frontend_net
       - backend_net
@@ -80,6 +88,8 @@ services:
       QDRANT__URL: http://qdrant:6333
       REDIS__URL: redis://redis:6379/0
       OLLAMA__BASE_URL: http://ollama:11434
+    volumes:
+      - model_cache:/data/hf-cache
     networks:
       - backend_net
     depends_on:
@@ -97,8 +107,11 @@ services:
     environment:
       # Server-to-server, inside the Docker network — never the browser.
       BACKEND_URL: http://backend-api:8000
+    # Its own env file, not the shared root `.env` — see the note at the
+    # bottom of .env.example for why (backend's strict Settings model
+    # would reject SESSION_SECRET as an unknown key).
     env_file:
-      - ../../.env
+      - ../../frontend/.env
     networks:
       - frontend_net
     depends_on:

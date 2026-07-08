@@ -1,6 +1,8 @@
 import asyncio
 from collections.abc import Sequence
 
+import structlog
+import torch
 from FlagEmbedding import BGEM3FlagModel
 
 from app.core.config import EmbeddingSettings
@@ -8,6 +10,8 @@ from app.core.constants import EMBEDDING_DIM
 from app.domain.value_objects.embedding_result import EmbeddingResult
 from app.infrastructure.embeddings.embedding_cache import EmbeddingCachePort
 from app.infrastructure.embeddings.text_normalizer import normalize_for_cache_key
+
+logger = structlog.get_logger(__name__)
 
 
 class BgeM3Adapter:
@@ -76,7 +80,23 @@ class BgeM3Adapter:
         return self._model
 
     def _load_model(self) -> BGEM3FlagModel:
-        return BGEM3FlagModel(self._settings.model_name_or_path, use_fp16=self._settings.use_fp16)
+        # fp16 matmul on CPU is unreliable (many CPU BLAS kernels don't
+        # properly support it) and was observed to silently produce
+        # all-NaN embeddings in a CPU-only container — verified directly:
+        # the exact same EMBEDDING__USE_FP16=true setting is harmless on
+        # a host with a CUDA-capable GPU but corrupts every embedding
+        # without raising when no CUDA device is present. Never trust the
+        # config flag alone; gate it on real hardware support.
+        use_fp16 = self._settings.use_fp16 and torch.cuda.is_available()
+        if self._settings.use_fp16 and not use_fp16:
+            logger.warning(
+                "embedding.fp16_disabled_no_cuda",
+                detail=(
+                    "EMBEDDING__USE_FP16=true but no CUDA device is available; "
+                    "falling back to fp32 to avoid silently corrupting embeddings."
+                ),
+            )
+        return BGEM3FlagModel(self._settings.model_name_or_path, use_fp16=use_fp16)
 
 
 def _encode_sync(model: BGEM3FlagModel, texts: list[str], model_id: str) -> list[EmbeddingResult]:
