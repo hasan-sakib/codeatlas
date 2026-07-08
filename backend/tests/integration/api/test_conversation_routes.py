@@ -1,9 +1,36 @@
+import os
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.integration.api.conftest import register_and_login
 
 pytestmark = pytest.mark.integration
+
+
+def _real_ollama_is_reachable() -> bool:
+    """CI has never provisioned a real Ollama (no service container, no
+    model pull step) — only Postgres/Redis/Qdrant run via testcontainers.
+    The one test below deliberately exercises the real LLM rather than a
+    fake (see its own comment), so it needs a live Ollama to mean
+    anything; skipping when none is reachable turns an environment gap
+    into an honest "skipped" instead of a confusing assertion failure,
+    while still running for real wherever one is available (e.g. local
+    dev with `ollama serve`)."""
+    base_url = os.environ.get("OLLAMA__BASE_URL", "http://localhost:11434")
+    try:
+        httpx.get(base_url, timeout=2.0)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+requires_real_ollama = pytest.mark.skipif(
+    not _real_ollama_is_reachable(),
+    reason="No real Ollama instance reachable at OLLAMA__BASE_URL — this test intentionally "
+    "exercises the real LLM end to end rather than a fake.",
+)
 
 
 def _create_workspace(client: TestClient, headers: dict[str, str], name: str) -> str:
@@ -63,6 +90,7 @@ def test_conversation_routes_require_workspace_ownership(api_client: TestClient)
     assert resp.status_code == 404
 
 
+@requires_real_ollama
 def test_send_message_streams_sse_response_and_persists_both_turns(
     api_client: TestClient,
 ) -> None:
