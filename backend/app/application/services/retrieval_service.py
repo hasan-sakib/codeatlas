@@ -10,6 +10,7 @@ from app.domain.entities.chunk import Chunk
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.embedding_port import EmbeddingPort
 from app.domain.ports.file_repository import FileRepository
+from app.domain.ports.reranker_port import RerankerPort
 from app.domain.ports.vector_store_port import VectorStorePort
 from app.domain.value_objects.ranked_chunk import RankedChunk
 from app.domain.value_objects.retrieval_query import RetrievalQuery
@@ -19,22 +20,15 @@ logger = structlog.get_logger(__name__)
 
 class RetrievalService:
     """Framework-agnostic hybrid retrieval: encode -> parallel dense+sparse
-    Qdrant search -> Reciprocal Rank Fusion -> Postgres hydration. Meant to
-    be consumed identically by the future LangGraph agent's retrieve_context
-    node and the stateless /search and /ask REST endpoints, so retrieval
-    behavior never diverges between the two call paths.
-
-    Reranking (Module 12) doesn't exist yet, so `retrieve()` currently
-    returns the top-N *fused* results directly (tagged source="fused")
-    rather than the top-N *reranked* results the design ultimately calls
-    for. When Module 12 lands: insert a rerank step between hydration and
-    the final N-slice, retag results "reranked", and introduce a
-    `retrieve_without_rerank()` bypass — redundant to add before there's
-    an actual rerank step to bypass.
+    Qdrant search -> Reciprocal Rank Fusion -> Postgres hydration -> rerank.
+    Meant to be consumed identically by the future LangGraph agent's
+    retrieve_context node and the stateless /search and /ask REST
+    endpoints, so retrieval behavior never diverges between the two call
+    paths.
 
     Emits retrieval timing via structlog rather than a
     `retrieval_duration_seconds` Prometheus metric — Module 20
-    (Monitoring) doesn't exist yet either.
+    (Monitoring) doesn't exist yet.
     """
 
     def __init__(
@@ -43,14 +37,38 @@ class RetrievalService:
         vector_store_port: VectorStorePort,
         chunk_repository: ChunkRepository,
         file_repository: FileRepository,
+        reranker_port: RerankerPort,
     ) -> None:
         self._embedding_port = embedding_port
         self._vector_store = vector_store_port
         self._chunk_repository = chunk_repository
         self._file_repository = file_repository
+        self._reranker = reranker_port
 
     async def retrieve(self, query: RetrievalQuery) -> list[RankedChunk]:
+        """Full pipeline: encode -> parallel search -> RRF -> hydrate -> rerank -> top-N."""
         start = time.monotonic()
+        fused = await self._search_fuse_and_hydrate(query)
+
+        reranked = await self._reranker.score(query.query_text, fused) if fused else []
+        result = reranked[: query.n]
+
+        logger.info(
+            "retrieval.completed",
+            workspace_id=str(query.workspace_id),
+            fused_candidates=len(fused),
+            returned=len(result),
+            duration_seconds=round(time.monotonic() - start, 4),
+        )
+        return result
+
+    async def retrieve_without_rerank(self, query: RetrievalQuery) -> list[RankedChunk]:
+        """Fused+hydrated chunks only, sliced to N directly — for a caller
+        applying its own reranking policy instead of this service's."""
+        fused = await self._search_fuse_and_hydrate(query)
+        return fused[: query.n]
+
+    async def _search_fuse_and_hydrate(self, query: RetrievalQuery) -> list[RankedChunk]:
         embedding = await self._embedding_port.embed_query(query.query_text)
         qdrant_filters = _build_qdrant_filters(query)
 
@@ -70,20 +88,9 @@ class RetrievalService:
         )
         dense_ids = [r.chunk_id for r in dense_results]
         sparse_ids = [r.chunk_id for r in sparse_results]
-
-        ranked: list[RankedChunk] = []
-        if dense_ids or sparse_ids:
-            ranked = await self._fuse_and_hydrate(query, dense_ids, sparse_ids)
-
-        logger.info(
-            "retrieval.completed",
-            workspace_id=str(query.workspace_id),
-            dense_hits=len(dense_ids),
-            sparse_hits=len(sparse_ids),
-            returned=len(ranked),
-            duration_seconds=round(time.monotonic() - start, 4),
-        )
-        return ranked
+        if not dense_ids and not sparse_ids:
+            return []
+        return await self._fuse_and_hydrate(query, dense_ids, sparse_ids)
 
     async def _fuse_and_hydrate(
         self, query: RetrievalQuery, dense_ids: list[UUID], sparse_ids: list[UUID]
@@ -126,7 +133,7 @@ class RetrievalService:
                 )
             )
 
-        return ranked[: query.n]
+        return ranked
 
 
 def _build_qdrant_filters(query: RetrievalQuery) -> dict[str, Any]:

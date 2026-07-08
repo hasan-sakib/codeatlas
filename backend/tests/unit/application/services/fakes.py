@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -6,6 +7,7 @@ from app.domain.entities.chunk import Chunk
 from app.domain.entities.file import File
 from app.domain.value_objects.chunk_upsert_item import ChunkUpsertItem
 from app.domain.value_objects.embedding_result import EmbeddingResult
+from app.domain.value_objects.ranked_chunk import RankedChunk
 from app.domain.value_objects.search_result import SearchResult
 
 
@@ -143,3 +145,18 @@ class FakeFileRepository:
 
     async def upsert(self, file: File) -> File:
         raise NotImplementedError
+
+
+class FakeReranker:
+    """Identity by default — returns the input order unchanged, just
+    retags source="reranked" — good enough for tests that only care that
+    RetrievalService wires the reranker in correctly, not about
+    reranking's own scoring behavior (that's Module 12's own test suite).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[RankedChunk]]] = []
+
+    async def score(self, query: str, chunks: list[RankedChunk]) -> list[RankedChunk]:
+        self.calls.append((query, list(chunks)))
+        return [replace(chunk, source="reranked") for chunk in chunks]

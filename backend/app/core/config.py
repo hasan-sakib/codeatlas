@@ -68,6 +68,20 @@ class EmbeddingSettings(BaseSettings):
     cache_ttl_seconds: int = 60 * 60 * 24 * 30  # 30 days — long-lived, see docs
 
 
+class RerankerSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="RERANKER__", extra="forbid")
+
+    model_name: str = "BAAI/bge-reranker-base"
+    max_length: int = 512
+    batch_size: int = 16
+    device: str = "cpu"
+    # If the cross-encoder fails to load or score (OOM, corrupted cache,
+    # etc.), return the input order unchanged instead of failing the
+    # whole retrieval request — reranking is a quality improvement, not
+    # a correctness requirement.
+    fail_open: bool = True
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -104,6 +118,7 @@ class Settings(BaseSettings):
     git: GitSettings = Field(default_factory=GitSettings)
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
+    reranker: RerankerSettings = Field(default_factory=RerankerSettings)
 
 
 @lru_cache(maxsize=1)

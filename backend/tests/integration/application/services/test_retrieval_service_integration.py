@@ -53,6 +53,17 @@ class _StubEmbeddingPort:
         return EmbeddingResult(dense=self._dense, sparse=self._sparse, model_id="stub:v1")
 
 
+class _NeverCalledReranker:
+    """This test exercises retrieve_without_rerank() — it's scoped to
+    proving real Qdrant+Postgres hydration/ranking, not reranking (see
+    Module 12's own test suite for that) — so the reranker must never be
+    invoked at all.
+    """
+
+    async def score(self, query: str, chunks: list) -> list:  # type: ignore[type-arg]
+        raise AssertionError("reranker should not be called via retrieve_without_rerank()")
+
+
 async def _seed_postgres_chain(db_session) -> tuple[Repository, list[File]]:
     now = datetime.now(UTC)
     user = User(
@@ -180,10 +191,12 @@ async def test_retrieve_end_to_end_ranks_the_closest_seeded_vector_first(
 
     embedding_port = _StubEmbeddingPort(dense=query_vector, sparse={})
     file_repo = SqlAlchemyFileRepository(db_session)
-    service = RetrievalService(embedding_port, vector_store, chunk_repo, file_repo)
+    service = RetrievalService(
+        embedding_port, vector_store, chunk_repo, file_repo, _NeverCalledReranker()
+    )
 
     query = RetrievalQuery(workspace_id=workspace_id, query_text="anything", embedding_version="v1")
-    results = await service.retrieve(query)
+    results = await service.retrieve_without_rerank(query)
 
     assert results[0].chunk_id == chunks[0].id
     assert results[0].file_path == "src/app.py"

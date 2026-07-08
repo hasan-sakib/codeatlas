@@ -15,6 +15,7 @@ nav:
       - Embedding Pipeline: modules/embedding_pipeline.md
       - Vector Store: modules/vector_store.md
       - Retriever: modules/retriever.md
+      - Reranker: modules/reranker.md
 theme:
   name: material
 markdown_extensions:

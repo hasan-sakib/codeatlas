@@ -10,6 +10,7 @@ from tests.unit.application.services.fakes import (
     FakeChunkRepository,
     FakeEmbeddingPort,
     FakeFileRepository,
+    FakeReranker,
     FakeVectorStore,
 )
 
@@ -58,7 +59,8 @@ async def test_retrieve_calls_dense_and_sparse_with_workspace_and_pushed_down_fi
     vector_store = FakeVectorStore(dense_results=[SearchResult(chunk_id, 0.9)])
     chunk_repo = FakeChunkRepository([_make_chunk(chunk_id, file_id)])
     file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
-    service = RetrievalService(embedding_port, vector_store, chunk_repo, file_repo)
+    reranker = FakeReranker()
+    service = RetrievalService(embedding_port, vector_store, chunk_repo, file_repo, reranker)
 
     query = RetrievalQuery(
         workspace_id=workspace_id,
@@ -84,10 +86,14 @@ async def test_retrieve_calls_dense_and_sparse_with_workspace_and_pushed_down_fi
         "symbol_kind": "function",
     }
     assert vector_store.sparse_calls[0]["filters"] == call["filters"]
+    assert len(reranker.calls) == 1
+    reranked_query, reranked_chunks = reranker.calls[0]
+    assert reranked_query == "find foo"
+    assert [c.chunk_id for c in reranked_chunks] == [chunk_id]
     assert len(results) == 1
     assert results[0].chunk_id == chunk_id
     assert results[0].file_path == "app.py"
-    assert results[0].source == "fused"
+    assert results[0].source == "reranked"
     assert results[0].text == "def foo(): pass"
 
 
@@ -101,20 +107,25 @@ async def test_retrieve_preserves_fused_order_regardless_of_postgres_return_orde
         [_make_chunk(a, file_id), _make_chunk(b, file_id), _make_chunk(c, file_id)]
     )
     file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
-    service = RetrievalService(FakeEmbeddingPort(), vector_store, chunk_repo, file_repo)
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
 
     query = RetrievalQuery(workspace_id=uuid4(), query_text="q", embedding_version="v1")
     results = await service.retrieve(query)
 
+    # FakeReranker is identity (preserves order) — this proves the fused
+    # order survives hydration all the way through to the reranker call.
     assert [r.chunk_id for r in results] == [a, b, c]
     assert chunk_repo.requested_ids == [a, b, c]  # fake really did scramble the return order
 
 
-async def test_zero_hits_returns_empty_list_without_calling_repositories() -> None:
+async def test_zero_hits_returns_empty_list_without_calling_repositories_or_reranker() -> None:
     vector_store = FakeVectorStore(dense_results=[], sparse_results=[])
     chunk_repo = FakeChunkRepository([])
+    reranker = FakeReranker()
     service = RetrievalService(
-        FakeEmbeddingPort(), vector_store, chunk_repo, FakeFileRepository([])
+        FakeEmbeddingPort(), vector_store, chunk_repo, FakeFileRepository([]), reranker
     )
 
     results = await service.retrieve(
@@ -123,6 +134,7 @@ async def test_zero_hits_returns_empty_list_without_calling_repositories() -> No
 
     assert results == []
     assert chunk_repo.call_count == 0
+    assert reranker.calls == []
 
 
 async def test_path_prefix_filters_post_hydration() -> None:
@@ -135,7 +147,9 @@ async def test_path_prefix_filters_post_hydration() -> None:
     file_repo = FakeFileRepository(
         [_make_file(file_a, "src/app.py"), _make_file(file_b, "tests/test_app.py")]
     )
-    service = RetrievalService(FakeEmbeddingPort(), vector_store, chunk_repo, file_repo)
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
 
     query = RetrievalQuery(
         workspace_id=uuid4(),
@@ -156,9 +170,30 @@ async def test_result_sliced_to_n() -> None:
     )
     chunk_repo = FakeChunkRepository([_make_chunk(cid, file_id) for cid in ids])
     file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
-    service = RetrievalService(FakeEmbeddingPort(), vector_store, chunk_repo, file_repo)
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
 
     query = RetrievalQuery(workspace_id=uuid4(), query_text="q", embedding_version="v1", n=2)
     results = await service.retrieve(query)
 
     assert [r.chunk_id for r in results] == ids[:2]
+
+
+async def test_retrieve_without_rerank_skips_the_reranker_and_returns_fused_results() -> None:
+    file_id = uuid4()
+    ids = [uuid4() for _ in range(3)]
+    vector_store = FakeVectorStore(
+        dense_results=[SearchResult(cid, 1.0 - i * 0.1) for i, cid in enumerate(ids)]
+    )
+    chunk_repo = FakeChunkRepository([_make_chunk(cid, file_id) for cid in ids])
+    file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
+    reranker = FakeReranker()
+    service = RetrievalService(FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, reranker)
+
+    query = RetrievalQuery(workspace_id=uuid4(), query_text="q", embedding_version="v1", n=2)
+    results = await service.retrieve_without_rerank(query)
+
+    assert reranker.calls == []
+    assert [r.chunk_id for r in results] == ids[:2]
+    assert all(r.source == "fused" for r in results)

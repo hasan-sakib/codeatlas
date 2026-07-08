@@ -17,6 +17,7 @@ from app.domain.ports.indexing_task_dispatcher import IndexingTaskDispatcherPort
 from app.domain.ports.message_repository import MessageRepository
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.repository_repository import RepositoryRepository
+from app.domain.ports.reranker_port import RerankerPort
 from app.domain.ports.token_blacklist import TokenBlacklistPort
 from app.domain.ports.user_repository import UserRepository
 from app.domain.ports.vector_store_port import VectorStorePort
@@ -54,6 +55,7 @@ from app.infrastructure.db.session import get_db_session
 from app.infrastructure.embeddings.bge_m3_adapter import BgeM3Adapter
 from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
 from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
+from app.infrastructure.reranker.cross_encoder_reranker import CrossEncoderReranker
 from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
 from app.infrastructure.vectorstore.qdrant_vector_store import QdrantVectorStore
 
@@ -150,6 +152,20 @@ def clear_vector_store_cache() -> None:
     _get_qdrant_client.cache_clear()
 
 
+def provide_reranker_port() -> RerankerPort:
+    # Not cached: CrossEncoderReranker itself holds no heavy state — the
+    # actual model lives in model_registry's own lru_cache, so a fresh
+    # lightweight instance per call is fine.
+    settings = get_settings().reranker
+    return CrossEncoderReranker(
+        model_name=settings.model_name,
+        max_length=settings.max_length,
+        batch_size=settings.batch_size,
+        device=settings.device,
+        fail_open=settings.fail_open,
+    )
+
+
 def provide_retrieval_service(session: DbSession) -> RetrievalService:
     # Not cached: chunk_repository/file_repository are session-scoped
     # (fresh per request), unlike the process-wide embedding/vector-store
@@ -159,4 +175,5 @@ def provide_retrieval_service(session: DbSession) -> RetrievalService:
         vector_store_port=provide_vector_store(),
         chunk_repository=provide_chunk_repository(session),
         file_repository=provide_file_repository(session),
+        reranker_port=provide_reranker_port(),
     )
