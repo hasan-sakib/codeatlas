@@ -19,6 +19,7 @@ nav:
       - LLM Service: modules/llm_service.md
       - Conversation Service: modules/conversation_service.md
       - LangGraph Agent: modules/langgraph_agent.md
+      - Streaming: modules/streaming.md
 theme:
   name: material
 markdown_extensions:
