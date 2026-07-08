@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import require_current_user, require_workspace_access
 from app.api.schemas.workspace import CreateWorkspaceRequest, WorkspaceResponse
@@ -9,7 +9,6 @@ from app.application.use_cases.workspaces.list_workspaces import ListWorkspacesU
 from app.core.di import provide_workspace_repository
 from app.domain.entities.user import User
 from app.domain.entities.workspace import Workspace
-from app.domain.exceptions import WorkspaceSlugAlreadyExistsError
 from app.domain.ports.workspace_repository import WorkspaceRepository
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
@@ -34,13 +33,9 @@ async def create_workspace(
     workspace_repo: Annotated[WorkspaceRepository, Depends(provide_workspace_repository)],
 ) -> WorkspaceResponse:
     use_case = CreateWorkspaceUseCase(workspace_repo)
-    try:
-        workspace = await use_case.execute(user.id, body.name, body.description)
-    except WorkspaceSlugAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A workspace with an equivalent name already exists",
-        ) from exc
+    # WorkspaceSlugAlreadyExistsError propagates to the global domain
+    # exception handler (409) — see app/api/middleware/error_handling.py.
+    workspace = await use_case.execute(user.id, body.name, body.description)
     return _to_response(workspace)
 
 

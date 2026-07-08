@@ -75,9 +75,37 @@ class ManageConversationUseCase:
         `summary` covers everything older than what `recent_messages`
         already carries verbatim, so a caller uses both together, never
         summary XOR full history beyond max_turns."""
+        conversation = await self._get_existing(conversation_id)
+        recent = await self._message_repo.list_recent(conversation_id, max_turns)
+        return conversation.summary, recent
+
+    async def list_conversations(
+        self, user_id: UUID, workspace_id: UUID | None, limit: int = 20, offset: int = 0
+    ) -> list[Conversation]:
+        return await self._conversation_repo.list_for_user(user_id, workspace_id, limit, offset)
+
+    async def get_conversation(self, conversation_id: UUID, workspace_id: UUID) -> Conversation:
+        """Same anti-enumeration rationale as GetWorkspaceUseCase/
+        GetRepositoryUseCase: a conversation that exists but belongs to a
+        different workspace is treated identically to one that doesn't
+        exist at all."""
+        conversation = await self._get_existing(conversation_id)
+        if conversation.workspace_id != workspace_id:
+            raise ConversationNotFoundError(conversation_id)
+        return conversation
+
+    async def delete_conversation(self, conversation_id: UUID, workspace_id: UUID) -> None:
+        await self.get_conversation(conversation_id, workspace_id)
+        await self._conversation_repo.soft_delete(conversation_id)
+
+    async def list_messages(
+        self, conversation_id: UUID, workspace_id: UUID, limit: int = 50
+    ) -> list[Message]:
+        await self.get_conversation(conversation_id, workspace_id)
+        return await self._message_repo.list_recent(conversation_id, limit)
+
+    async def _get_existing(self, conversation_id: UUID) -> Conversation:
         conversation = await self._conversation_repo.get_by_id(conversation_id)
         if conversation is None or conversation.is_deleted:
             raise ConversationNotFoundError(conversation_id)
-
-        recent = await self._message_repo.list_recent(conversation_id, max_turns)
-        return conversation.summary, recent
+        return conversation

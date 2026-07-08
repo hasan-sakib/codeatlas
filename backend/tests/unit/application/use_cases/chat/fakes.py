@@ -23,7 +23,15 @@ class FakeConversationRepository:
     async def list_for_user(
         self, user_id: UUID, workspace_id: UUID | None, limit: int, offset: int
     ) -> list[Conversation]:
-        raise NotImplementedError
+        matching = [
+            c
+            for c in self.conversations.values()
+            if c.user_id == user_id
+            and not c.is_deleted
+            and (workspace_id is None or c.workspace_id == workspace_id)
+        ]
+        matching.sort(key=lambda c: c.updated_at, reverse=True)
+        return matching[offset : offset + limit]
 
     async def update_summary(self, conversation_id: UUID, summary: str) -> None:
         self.update_summary_calls.append((conversation_id, summary))

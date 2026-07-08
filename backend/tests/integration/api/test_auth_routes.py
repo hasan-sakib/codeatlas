@@ -80,3 +80,24 @@ def test_login_with_wrong_password_returns_401(api_client: TestClient) -> None:
     )
 
     assert resp.status_code == 401
+
+
+def test_login_is_rate_limited_per_ip(api_client: TestClient) -> None:
+    # Default RATE_LIMIT__AUTH_PER_IP_PER_MINUTE is 5 — the 6th attempt
+    # within the window must be rejected regardless of credentials,
+    # confirming the dependency is actually wired onto this route (not
+    # just unit-tested in isolation, see test_rate_limit.py).
+    email = "ratelimited.flow@example.com"
+    api_client.post("/api/v1/auth/register", json={"email": email, "password": "correct-password"})
+
+    for _ in range(5):
+        resp = api_client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "wrong-password"}
+        )
+        assert resp.status_code == 401
+
+    sixth = api_client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "wrong-password"}
+    )
+    assert sixth.status_code == 429
+    assert "Retry-After" in sixth.headers

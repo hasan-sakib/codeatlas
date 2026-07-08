@@ -32,11 +32,34 @@ class CorrelationIdMiddleware:
 
         async def send_with_correlation_id(message: Message) -> None:
             if message["type"] == "http.response.start":
-                response_headers = message.setdefault("headers", [])
+                # Replace, don't blindly append: a downstream handler
+                # (e.g. the global error handlers) may have already set
+                # this header itself using the same correlation id —
+                # appending unconditionally produced a duplicated
+                # "X-Request-ID: id, id" header, verified directly.
+                response_headers = [
+                    (key, value)
+                    for key, value in message.setdefault("headers", [])
+                    if key != _CORRELATION_ID_HEADER_BYTES
+                ]
                 response_headers.append((_CORRELATION_ID_HEADER_BYTES, correlation_id.encode()))
+                message["headers"] = response_headers
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_correlation_id)
-        finally:
+        except Exception:
+            # Deliberately don't clear here (see Module 17's error
+            # handling): an unhandled exception propagates past this
+            # middleware to Starlette's ServerErrorMiddleware, which sits
+            # outside every user-added middleware and dispatches to the
+            # registered Exception handler in the same task/context —
+            # verified empirically that clearing unconditionally in a
+            # `finally` made that handler see correlation_id=None for
+            # every 500 response, exactly the case where it matters
+            # most. Safe to skip: each request runs in its own asyncio
+            # Task, so a contextvar left set here can't leak into a
+            # different request's context.
+            raise
+        else:
             clear_correlation_id()

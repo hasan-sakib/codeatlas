@@ -13,6 +13,7 @@ from app.agent.tools.run_search_tool import RunSearchTool
 from app.application.services.retrieval_service import RetrievalService
 from app.application.use_cases.chat.manage_conversation import ManageConversationUseCase
 from app.application.use_cases.chat.summarize_conversation import SummarizeConversationUseCase
+from app.application.use_cases.docs.generate_documentation import GenerateDocumentationUseCase
 from app.core.config import get_settings
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.conversation_repository import ConversationRepository
@@ -237,6 +238,15 @@ def provide_summarize_conversation_use_case(session: DbSession) -> SummarizeConv
         llm_port=provide_llm_port(),
         prompt_renderer=provide_prompt_renderer(),
         context_turns=settings.context_window_turns,
+    )
+
+
+def provide_generate_documentation_use_case(session: DbSession) -> GenerateDocumentationUseCase:
+    return GenerateDocumentationUseCase(
+        retrieval_service=provide_retrieval_service(session),
+        llm_port=provide_llm_port(),
+        prompt_renderer=provide_prompt_renderer(),
+        embedding_version=get_settings().embedding.model_id,
     )
 
 

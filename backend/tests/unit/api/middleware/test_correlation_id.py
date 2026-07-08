@@ -1,8 +1,10 @@
 import logging
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.middleware.correlation_id import CORRELATION_ID_HEADER
+from app.api.middleware.correlation_id import CORRELATION_ID_HEADER, CorrelationIdMiddleware
+from app.api.middleware.error_handling import register_exception_handlers
 from app.core.logging import get_correlation_id
 
 
@@ -65,3 +67,26 @@ def test_correlation_id_appears_in_route_handler_logs(client: TestClient) -> Non
 
     assert any(correlation_id in line for line in test_handler.lines)
     assert any("health_check.requested" in line for line in test_handler.lines)
+
+
+def test_correlation_id_survives_into_an_unhandled_exception_response() -> None:
+    # Regression test: CorrelationIdMiddleware used to clear the
+    # correlation id in a bare `finally`, which ran *before* Starlette's
+    # ServerErrorMiddleware (outside every user-added middleware) got to
+    # dispatch to the registered Exception handler — so every 500
+    # response's correlation_id came back None. Verified directly against
+    # a real FastAPI app + TestClient, not just reasoned about.
+    app = FastAPI()
+    app.add_middleware(CorrelationIdMiddleware)
+    register_exception_handlers(app)
+
+    @app.get("/boom")
+    async def boom() -> None:
+        raise ValueError("unexpected")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/boom")
+
+    assert response.status_code == 500
+    assert response.json()["correlation_id"] == response.headers.get(CORRELATION_ID_HEADER)
+    assert response.json()["correlation_id"] is not None

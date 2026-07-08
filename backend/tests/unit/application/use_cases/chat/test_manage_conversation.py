@@ -153,3 +153,91 @@ async def test_get_context_window_raises_for_soft_deleted_conversation() -> None
 
     with pytest.raises(ConversationNotFoundError):
         await use_case.get_context_window(conversation.id, max_turns=10)
+
+
+async def test_list_conversations_filters_by_user_and_workspace_excluding_deleted() -> None:
+    user_id, workspace_id = uuid4(), uuid4()
+    mine = _conversation(user_id=user_id, workspace_id=workspace_id)
+    someone_elses = _conversation(user_id=uuid4(), workspace_id=workspace_id)
+    deleted = _conversation(user_id=user_id, workspace_id=workspace_id, is_deleted=True)
+    other_workspace = _conversation(user_id=user_id, workspace_id=uuid4())
+    conversation_repo = FakeConversationRepository([mine, someone_elses, deleted, other_workspace])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    results = await use_case.list_conversations(user_id, workspace_id)
+
+    assert [c.id for c in results] == [mine.id]
+
+
+async def test_get_conversation_returns_it_when_in_the_right_workspace() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    result = await use_case.get_conversation(conversation.id, conversation.workspace_id)
+
+    assert result == conversation
+
+
+async def test_get_conversation_raises_for_wrong_workspace() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    with pytest.raises(ConversationNotFoundError):
+        await use_case.get_conversation(conversation.id, uuid4())
+
+
+async def test_delete_conversation_soft_deletes() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    await use_case.delete_conversation(conversation.id, conversation.workspace_id)
+
+    assert conversation_repo.conversations[conversation.id].is_deleted is True
+
+
+async def test_delete_conversation_raises_for_wrong_workspace_without_deleting() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    with pytest.raises(ConversationNotFoundError):
+        await use_case.delete_conversation(conversation.id, uuid4())
+
+    assert conversation_repo.conversations[conversation.id].is_deleted is False
+
+
+async def test_list_messages_returns_recent_messages_for_the_conversation() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    message_repo = FakeMessageRepository()
+    use_case = ManageConversationUseCase(conversation_repo, message_repo, FakeSummaryDispatcher())
+    await use_case.append_message(conversation.id, MessageRole.USER, "hi")
+    await use_case.append_message(conversation.id, MessageRole.ASSISTANT, "hello")
+
+    messages = await use_case.list_messages(conversation.id, conversation.workspace_id)
+
+    assert [m.content for m in messages] == ["hi", "hello"]
+
+
+async def test_list_messages_raises_for_wrong_workspace() -> None:
+    conversation = _conversation()
+    conversation_repo = FakeConversationRepository([conversation])
+    use_case = ManageConversationUseCase(
+        conversation_repo, FakeMessageRepository(), FakeSummaryDispatcher()
+    )
+
+    with pytest.raises(ConversationNotFoundError):
+        await use_case.list_messages(conversation.id, uuid4())

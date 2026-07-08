@@ -131,6 +131,14 @@ class AgentSettings(BaseSettings):
     context_chunk_count: int = 8
 
 
+class RateLimitSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="RATE_LIMIT__", extra="forbid")
+
+    auth_per_ip_per_minute: int = 5
+    chat_per_user_per_minute: int = 30
+    indexing_trigger_per_user_per_minute: int = 3
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -170,6 +178,7 @@ class Settings(BaseSettings):
     reranker: RerankerSettings = Field(default_factory=RerankerSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
 
 @lru_cache(maxsize=1)

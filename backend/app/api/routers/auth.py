@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.deps import bearer_scheme, require_current_user
+from app.api.middleware.rate_limit import rate_limit_by_ip
 from app.api.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -25,11 +26,6 @@ from app.core.di import (
 )
 from app.core.security import decode_access_token
 from app.domain.entities.user import User
-from app.domain.exceptions import (
-    EmailAlreadyExistsError,
-    InvalidCredentialsError,
-    InvalidRefreshTokenError,
-)
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.token_blacklist import TokenBlacklistPort
 from app.domain.ports.user_repository import UserRepository
@@ -42,22 +38,32 @@ async def me(user: Annotated[User, Depends(require_current_user)]) -> UserRespon
     return UserResponse(id=user.id, email=user.email, full_name=user.full_name)
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(rate_limit_by_ip(lambda: get_settings().rate_limit.auth_per_ip_per_minute))
+    ],
+)
 async def register(
     body: RegisterRequest,
     user_repo: Annotated[UserRepository, Depends(provide_user_repository)],
 ) -> UserResponse:
     use_case = RegisterUserUseCase(user_repo)
-    try:
-        user = await use_case.execute(body.email, body.password, body.full_name)
-    except EmailAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        ) from exc
+    # EmailAlreadyExistsError propagates to the global domain exception
+    # handler (409) — see app/api/middleware/error_handling.py.
+    user = await use_case.execute(body.email, body.password, body.full_name)
     return UserResponse(id=user.id, email=user.email, full_name=user.full_name)
 
 
-@router.post("/login", response_model=TokenPairResponse)
+@router.post(
+    "/login",
+    response_model=TokenPairResponse,
+    dependencies=[
+        Depends(rate_limit_by_ip(lambda: get_settings().rate_limit.auth_per_ip_per_minute))
+    ],
+)
 async def login(
     body: LoginRequest,
     user_repo: Annotated[UserRepository, Depends(provide_user_repository)],
@@ -66,12 +72,9 @@ async def login(
     ],
 ) -> TokenPairResponse:
     use_case = LoginUseCase(user_repo, refresh_token_repo, get_settings().security)
-    try:
-        tokens = await use_case.execute(body.email, body.password)
-    except InvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
-        ) from exc
+    # InvalidCredentialsError propagates to the global domain exception
+    # handler (401) — see app/api/middleware/error_handling.py.
+    tokens = await use_case.execute(body.email, body.password)
     return TokenPairResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
@@ -83,13 +86,9 @@ async def refresh(
     ],
 ) -> TokenPairResponse:
     use_case = RefreshTokenUseCase(refresh_token_repo, get_settings().security)
-    try:
-        tokens = await use_case.execute(body.refresh_token)
-    except InvalidRefreshTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        ) from exc
+    # InvalidRefreshTokenError propagates to the global domain exception
+    # handler (401) — see app/api/middleware/error_handling.py.
+    tokens = await use_case.execute(body.refresh_token)
     return TokenPairResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 

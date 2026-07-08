@@ -77,12 +77,14 @@ class RetrievalService:
                 embedding.dense,
                 workspace_id=query.workspace_id,
                 limit=query.k1,
+                repository_id=query.repository_id,
                 filters=qdrant_filters,
             ),
             self._vector_store.search_sparse(
                 embedding.sparse,
                 workspace_id=query.workspace_id,
                 limit=query.k1,
+                repository_id=query.repository_id,
                 filters=qdrant_filters,
             ),
         )

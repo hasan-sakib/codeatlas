@@ -97,6 +97,42 @@ async def test_retrieve_calls_dense_and_sparse_with_workspace_and_pushed_down_fi
     assert results[0].text == "def foo(): pass"
 
 
+async def test_retrieve_passes_repository_id_through_to_dense_and_sparse_search() -> None:
+    file_id, chunk_id, workspace_id, repository_id = uuid4(), uuid4(), uuid4(), uuid4()
+    vector_store = FakeVectorStore(dense_results=[SearchResult(chunk_id, 0.9)])
+    chunk_repo = FakeChunkRepository([_make_chunk(chunk_id, file_id)])
+    file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
+
+    query = RetrievalQuery(
+        workspace_id=workspace_id,
+        query_text="find foo",
+        embedding_version="bge-m3:v1",
+        repository_id=repository_id,
+    )
+    await service.retrieve(query)
+
+    assert vector_store.dense_calls[0]["repository_id"] == repository_id
+    assert vector_store.sparse_calls[0]["repository_id"] == repository_id
+
+
+async def test_retrieve_defaults_repository_id_to_none_when_not_scoped() -> None:
+    file_id, chunk_id, workspace_id = uuid4(), uuid4(), uuid4()
+    vector_store = FakeVectorStore(dense_results=[SearchResult(chunk_id, 0.9)])
+    chunk_repo = FakeChunkRepository([_make_chunk(chunk_id, file_id)])
+    file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
+
+    query = RetrievalQuery(workspace_id=workspace_id, query_text="find foo", embedding_version="v1")
+    await service.retrieve(query)
+
+    assert vector_store.dense_calls[0]["repository_id"] is None
+
+
 async def test_retrieve_preserves_fused_order_regardless_of_postgres_return_order() -> None:
     file_id = uuid4()
     a, b, c = uuid4(), uuid4(), uuid4()

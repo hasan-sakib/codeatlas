@@ -5,11 +5,13 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from app.api.deps import require_current_user, require_workspace_access
+from app.api.deps import require_current_user, require_repository_access, require_workspace_access
 from app.core.config import SecuritySettings
 from app.core.security import create_access_token
+from app.domain.entities.repository import Repository, RepositorySourceType, RepositoryStatus
 from app.domain.entities.user import User
 from app.domain.entities.workspace import Workspace
+from app.domain.exceptions import RepositoryNotFoundError, WorkspaceNotFoundError
 from tests.unit.application.use_cases.auth.fakes import FakeTokenBlacklist, FakeUserRepository
 
 
@@ -184,25 +186,94 @@ async def test_require_workspace_access_allows_owner() -> None:
     assert result is workspace
 
 
-async def test_require_workspace_access_rejects_non_owner_with_404() -> None:
+async def test_require_workspace_access_rejects_non_owner() -> None:
+    # WorkspaceNotFoundError propagates to the global domain exception
+    # handler (404) — see app/api/middleware/error_handling.py — rather
+    # than being converted to HTTPException at this layer.
     owner = _make_user()
     other_user = _make_user(id=uuid4(), email="other@example.com")
     workspace = _make_workspace(owner.id)
     repo = _FakeWorkspaceRepository(workspace)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(WorkspaceNotFoundError):
         await require_workspace_access(
             workspace_id=workspace.id, user=other_user, workspace_repo=repo
         )
 
-    assert exc_info.value.status_code == 404
 
-
-async def test_require_workspace_access_rejects_missing_workspace_with_404() -> None:
+async def test_require_workspace_access_rejects_missing_workspace() -> None:
     user = _make_user()
     repo = _FakeWorkspaceRepository(None)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(WorkspaceNotFoundError):
         await require_workspace_access(workspace_id=uuid4(), user=user, workspace_repo=repo)
 
-    assert exc_info.value.status_code == 404
+
+class _FakeRepositoryRepository:
+    def __init__(self, repository: Repository | None) -> None:
+        self._repository = repository
+
+    async def add(self, repository: Repository) -> Repository:
+        raise NotImplementedError
+
+    async def get_by_id(self, repository_id: object) -> Repository | None:
+        return self._repository
+
+    async def list_by_workspace(self, workspace_id: object) -> list[Repository]:
+        raise NotImplementedError
+
+    async def update_status(self, repository_id: object, status: object, **kwargs: object) -> None:
+        raise NotImplementedError
+
+    async def delete(self, repository_id: object) -> None:
+        raise NotImplementedError
+
+
+def _make_repository(workspace_id: object) -> Repository:
+    now = datetime.now(UTC)
+    return Repository(
+        id=uuid4(),
+        workspace_id=workspace_id,  # type: ignore[arg-type]
+        source_type=RepositorySourceType.GIT_URL,
+        git_url="https://github.com/example/repo.git",
+        default_branch="main",
+        local_path=None,
+        last_indexed_commit_sha=None,
+        status=RepositoryStatus.READY,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+async def test_require_repository_access_allows_repository_in_the_workspace() -> None:
+    owner = _make_user()
+    workspace = _make_workspace(owner.id)
+    repository = _make_repository(workspace.id)
+    repository_repo = _FakeRepositoryRepository(repository)
+
+    result = await require_repository_access(
+        repository_id=repository.id, workspace=workspace, repository_repo=repository_repo
+    )
+
+    assert result is repository
+
+
+async def test_require_repository_access_rejects_missing_repository() -> None:
+    workspace = _make_workspace(uuid4())
+    repository_repo = _FakeRepositoryRepository(None)
+
+    with pytest.raises(RepositoryNotFoundError):
+        await require_repository_access(
+            repository_id=uuid4(), workspace=workspace, repository_repo=repository_repo
+        )
+
+
+async def test_require_repository_access_rejects_repository_in_a_different_workspace() -> None:
+    workspace = _make_workspace(uuid4())
+    repository = _make_repository(uuid4())  # belongs to a different workspace
+    repository_repo = _FakeRepositoryRepository(repository)
+
+    with pytest.raises(RepositoryNotFoundError):
+        await require_repository_access(
+            repository_id=repository.id, workspace=workspace, repository_repo=repository_repo
+        )

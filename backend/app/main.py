@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middleware.correlation_id import CorrelationIdMiddleware
-from app.api.routers import auth, health, repositories, workspaces
+from app.api.middleware.error_handling import register_exception_handlers
+from app.api.routers import auth, conversations, docs, health, repositories, search, workspaces
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     configure_logging(settings)
 
     app = FastAPI(title="CodeAtlas", version="0.1.0")
+    register_exception_handlers(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -29,6 +31,9 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(workspaces.router)
     app.include_router(repositories.router)
+    app.include_router(search.router)
+    app.include_router(conversations.router)
+    app.include_router(docs.router)
 
     return app
 
