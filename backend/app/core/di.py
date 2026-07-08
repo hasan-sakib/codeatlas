@@ -2,9 +2,14 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from langgraph.graph.state import CompiledStateGraph
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.graph import build_agent_graph
+from app.agent.tools.get_file_tool import GetFileTool
+from app.agent.tools.get_git_blame_tool import GetGitBlameTool
+from app.agent.tools.run_search_tool import RunSearchTool
 from app.application.services.retrieval_service import RetrievalService
 from app.application.use_cases.chat.manage_conversation import ManageConversationUseCase
 from app.application.use_cases.chat.summarize_conversation import SummarizeConversationUseCase
@@ -232,4 +237,38 @@ def provide_summarize_conversation_use_case(session: DbSession) -> SummarizeConv
         llm_port=provide_llm_port(),
         prompt_renderer=provide_prompt_renderer(),
         context_turns=settings.context_window_turns,
+    )
+
+
+def provide_get_file_tool(session: DbSession) -> GetFileTool:
+    return GetFileTool(provide_chunk_repository(session), provide_file_repository(session))
+
+
+def provide_get_git_blame_tool(session: DbSession) -> GetGitBlameTool:
+    return GetGitBlameTool(
+        chunk_repository=provide_chunk_repository(session),
+        file_repository=provide_file_repository(session),
+        repository_repository=provide_repository_repository(session),
+        git_port=provide_git_port(),
+    )
+
+
+def provide_run_search_tool(session: DbSession) -> RunSearchTool:
+    return RunSearchTool(provide_retrieval_service(session))
+
+
+def provide_agent_graph(session: DbSession) -> CompiledStateGraph:
+    # Not cached: composes session-scoped use cases/repositories, same
+    # reasoning as provide_retrieval_service — a fresh graph per request
+    # is cheap (it's just node/edge wiring over already-built ports).
+    return build_agent_graph(
+        llm_port=provide_llm_port(),
+        retrieval_service=provide_retrieval_service(session),
+        reranker_port=provide_reranker_port(),
+        manage_conversation_use_case=provide_manage_conversation_use_case(session),
+        prompt_renderer=provide_prompt_renderer(),
+        get_file_tool=provide_get_file_tool(session),
+        get_git_blame_tool=provide_get_git_blame_tool(session),
+        run_search_tool=provide_run_search_tool(session),
+        settings=get_settings().agent,
     )

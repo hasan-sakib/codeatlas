@@ -18,6 +18,7 @@ nav:
       - Reranker: modules/reranker.md
       - LLM Service: modules/llm_service.md
       - Conversation Service: modules/conversation_service.md
+      - LangGraph Agent: modules/langgraph_agent.md
 theme:
   name: material
 markdown_extensions:

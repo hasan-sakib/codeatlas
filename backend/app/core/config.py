@@ -40,7 +40,10 @@ class OllamaSettings(BaseSettings):
     # than the model supports (verified: 4096, vs. qwen3:4b's advertised
     # 262144) — every request must set options.num_ctx explicitly or it
     # silently runs with whatever the server happened to start with.
-    num_ctx: int = 8192
+    # 16384 (verified to load fine, ~5.1GB resident) leaves headroom
+    # above generate_answer_max_tokens (4096, Module 13) plus a full RAG
+    # prompt (query + history + several chunks).
+    num_ctx: int = 16384
     max_retries: int = 3
     retry_backoff_seconds: float = 1.0
 
@@ -101,6 +104,33 @@ class ConversationSettings(BaseSettings):
     context_window_turns: int = 20
 
 
+class AgentSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="AGENT__", extra="forbid")
+
+    max_retrieval_attempts: int = 2
+    max_tool_calls: int = 3
+    # Widening factor applied to k1/k2 on each retry past the first
+    # retrieval attempt (assess_sufficiency's "insufficient" path).
+    retry_k_multiplier: int = 2
+    # Every LLM call in this agent — even a one-word intent
+    # classification — needs generous headroom: Module 14 found Qwen3's
+    # default thinking behavior can consume hundreds of tokens before
+    # any answer text appears, and a too-small budget silently returns
+    # an empty response (finish_reason="length") rather than an error.
+    # generate_answer's default is higher still — verified directly that
+    # 2048 was NOT always enough for a real RAG prompt (thinking consumed
+    # the entire budget, empty answer) even though it comfortably covers
+    # a bare intent-classification call; num_ctx (8192 default) must
+    # stay comfortably above this plus prompt size.
+    classify_intent_max_tokens: int = 1024
+    rewrite_query_max_tokens: int = 1024
+    generate_answer_max_tokens: int = 4096
+    # How many top-N reranked chunks are placed into the generate_answer
+    # prompt — separate from RetrievalQuery.n (Module 11), which bounds
+    # what the retriever returns before this further slice.
+    context_chunk_count: int = 8
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -139,6 +169,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     reranker: RerankerSettings = Field(default_factory=RerankerSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
 
 
 @lru_cache(maxsize=1)

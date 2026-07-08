@@ -12,6 +12,14 @@ Retrieved context:
 {{ chunk.text }}
 {% endfor %}
 ---
+{% if tool_outputs is defined and tool_outputs %}
+Additional context from tools:
+{% for output in tool_outputs %}
+---
+{{ output }}
+{% endfor %}
+---
+{% endif %}
 
 Question: {{ query }}
 

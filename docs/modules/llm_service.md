@@ -61,3 +61,7 @@ For `stream_complete()` specifically, retries are scoped to *opening* the stream
 ## Incidental fix bundled into this module
 
 While adding this module's dependencies (`jinja2`, `tenacity`), discovered `sentence-transformers` — imported directly by Module 12's `CrossEncoderReranker` — was never declared in `pyproject.toml`'s dependency list, only present transitively. Declared it explicitly (`>=3.2,<4`, matching the installed `3.4.1`). Upgrading it also made a `# type: ignore[arg-type]` on `CrossEncoder.predict(...)` (added in Module 12 for an older transitive version's overly broad parameter typing) genuinely unused under mypy — removed it rather than leaving a dead ignore comment.
+
+## Follow-up from Module 13
+
+Two settings changed after Module 13's real-model testing surfaced sharper versions of the risks already flagged above: `OllamaSettings.num_ctx` raised from 8192 to 16384, and a new `AgentSettings.generate_answer_max_tokens` (4096) was added — a real RAG-shaped prompt (retrieved chunk + question) was enough to exhaust a 2048-token budget entirely on thinking, producing an empty answer. Module 13 also added `classify_intent.jinja` and `general_chat.jinja` to `prompt_templates/`, and a `tool_outputs` block to `rag_answer.jinja` — see `docs/modules/langgraph_agent.md` for the two real bugs this caught (empty answers, and a wrong refusal response for casual greetings) and the `raw: true` mitigation investigated but not adopted here.
