@@ -1,0 +1,86 @@
+# Production-like overlay: no bind mounts (immutable images built from
+# the same Dockerfiles — swap `build:` for a pinned `image:` once CI
+# publishes tagged images, see docs/modules/deployment.md), resource
+# limits, restart policies, log rotation, and no host ports on anything
+# except `frontend`/`backend-api` (per DESIGN.md §22 — everything else is
+# reachable only via `backend_net`, which this overlay marks internal).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  backend_net:
+    internal: true
+
+services:
+  backend-api:
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+
+  worker:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+
+  frontend:
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+
+  postgres:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+
+  redis:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+
+  qdrant:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+
+  ollama:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8g

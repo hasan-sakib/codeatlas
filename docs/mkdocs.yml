@@ -21,6 +21,7 @@ nav:
       - LangGraph Agent: modules/langgraph_agent.md
       - Streaming: modules/streaming.md
       - REST API: modules/rest_api.md
+      - Frontend: modules/frontend.md
 theme:
   name: material
 markdown_extensions:

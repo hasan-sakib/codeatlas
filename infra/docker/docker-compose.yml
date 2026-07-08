@@ -1,15 +1,40 @@
 # Base service definitions: names, images, networks, named volumes, health
 # checks. No dev/prod-specific ports, bind mounts, or resource limits here —
-# see docker-compose.dev.yml / docker-compose.prod.yml (added in Module 19).
+# see docker-compose.dev.yml / docker-compose.prod.yml (Module 19).
+#
+# Two networks, matching DESIGN.md §22's network diagram: `frontend_net`
+# (frontend + backend-api — the only services ever reachable from outside
+# the Docker network) and `backend_net` (backend-api + worker + every
+# stateful/internal service). backend-api sits on both since it's the
+# bridge between the two. docker-compose.prod.yml marks `backend_net`
+# `internal: true`; dev leaves it open so host tooling (psql, redis-cli)
+# can still reach the ports it publishes there.
+#
+# DATABASE__URL/QDRANT__URL/REDIS__URL/OLLAMA__BASE_URL in the shared
+# `.env` file point at `localhost` — correct for running backend-api
+# directly on the host against Dockerized infra (the workflow used to
+# verify every module so far), but wrong for backend-api/worker running
+# *as containers* on this network, where those hostnames don't resolve
+# to anything reachable. The `environment:` blocks below override just
+# those four keys with the Compose service DNS names — `environment:`
+# always wins over `env_file:`, so `.env` keeps holding real secrets/
+# tunables (JWT secret, rate limits, chunking params, ...) while these
+# four stay topology facts owned by Compose, not the env file.
 
 networks:
-  codeatlas_net:
+  frontend_net:
+    driver: bridge
+  backend_net:
     driver: bridge
 
 volumes:
   postgres_data:
   qdrant_data:
   ollama_models:
+  # Reserved for the indexing pipeline's cloned-repository storage
+  # (StoragePort, per DESIGN.md §13) — not yet built (no storage module,
+  # no configurable storage root exists in app/core/config.py today), so
+  # deliberately left unattached rather than mounted to a made-up path.
   codeatlas_storage:
 
 services:
@@ -19,8 +44,14 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ../../.env
+    environment:
+      DATABASE__URL: postgresql+asyncpg://codeatlas:codeatlas@postgres:5432/codeatlas
+      QDRANT__URL: http://qdrant:6333
+      REDIS__URL: redis://redis:6379/0
+      OLLAMA__BASE_URL: http://ollama:11434
     networks:
-      - codeatlas_net
+      - frontend_net
+      - backend_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,8 +75,13 @@ services:
     command: ["sh", "-c", "echo 'worker placeholder - no Celery app yet' && sleep infinity"]
     env_file:
       - ../../.env
+    environment:
+      DATABASE__URL: postgresql+asyncpg://codeatlas:codeatlas@postgres:5432/codeatlas
+      QDRANT__URL: http://qdrant:6333
+      REDIS__URL: redis://redis:6379/0
+      OLLAMA__BASE_URL: http://ollama:11434
     networks:
-      - codeatlas_net
+      - backend_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +89,26 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    environment:
+      # Server-to-server, inside the Docker network — never the browser.
+      BACKEND_URL: http://backend-api:8000
+    env_file:
+      - ../../.env
+    networks:
+      - frontend_net
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/login', (r) => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   postgres:
     image: postgres:16-alpine
@@ -63,7 +119,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - codeatlas_net
+      - backend_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U codeatlas"]
       interval: 5s
@@ -73,7 +129,7 @@ services:
   redis:
     image: redis:7-alpine
     networks:
-      - codeatlas_net
+      - backend_net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -85,7 +141,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - codeatlas_net
+      - backend_net
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333'"]
       interval: 5s
@@ -97,7 +153,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     networks:
-      - codeatlas_net
+      - backend_net
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/11434'"]
       interval: 5s

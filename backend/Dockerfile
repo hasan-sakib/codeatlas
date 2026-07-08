@@ -5,12 +5,18 @@ FROM python:3.12-slim AS builder
 RUN pip install --no-cache-dir uv
 
 WORKDIR /build
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
-COPY pyproject.toml ./
+# Dependencies synced from the committed lockfile (--frozen: fail rather
+# than silently re-resolve if pyproject.toml and uv.lock ever drift) in
+# their own layer, before app code is copied in — editing app/ doesn't
+# invalidate this layer's cache. --no-dev excludes pytest/mypy/ruff/etc,
+# which have no business in a runtime image.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
 COPY app ./app
-
-RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv/bin/python .
+RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime
 

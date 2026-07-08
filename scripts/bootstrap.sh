@@ -13,4 +13,4 @@ cd "${ROOT_DIR}/backend"
 uv sync --all-groups
 uv run pre-commit install --config "${ROOT_DIR}/.pre-commit-config.yaml"
 
-echo "Bootstrap complete. Run 'docker compose -f infra/docker/docker-compose.yml up' to start services."
+echo "Bootstrap complete. Run 'docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up --build' to start services."
