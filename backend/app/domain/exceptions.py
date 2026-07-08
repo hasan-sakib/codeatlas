@@ -44,3 +44,16 @@ class RepositoryNotFoundError(DomainError):
 
 class RepositoryAlreadyIndexingError(DomainError):
     """A re-index was requested/implied while a job is already in flight."""
+
+
+class LLMUnavailableError(DomainError):
+    """The LLM backend (Ollama) could not be reached or errored after
+    exhausting the configured retry budget."""
+
+
+class ConversationNotFoundError(DomainError):
+    """Conversation doesn't exist, or exists but is soft-deleted."""
+
+    def __init__(self, conversation_id: UUID) -> None:
+        super().__init__(f"Conversation not found: {conversation_id}")
+        self.conversation_id = conversation_id

@@ -11,7 +11,8 @@ class RankedChunk:
     end_line: int
     symbol_name: str | None
     score: float
-    # "reranked" is reserved for Module 12 (Reranker), which doesn't exist
-    # yet — RetrievalService.retrieve() currently returns "fused" results.
+    # "fused" = RetrievalService.retrieve_without_rerank() results (no
+    # reranker call); "reranked" = RetrievalService.retrieve() results
+    # (Module 12's CrossEncoderReranker has scored and reordered these).
     source: Literal["dense", "sparse", "fused", "reranked"]
     text: str | None = None

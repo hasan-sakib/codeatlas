@@ -1,0 +1,8 @@
+Summarize the following conversation between a user and CodeAtlas concisely, preserving any technical details (file paths, symbol names, decisions) that later turns might reference. Output only the summary.
+{% if existing_summary is defined and existing_summary %}
+Existing summary: {{ existing_summary }}
+{% endif %}
+{% for message in messages %}
+{{ message.role }}: {{ message.content }}
+{% endfor %}
+Summary:

@@ -36,6 +36,13 @@ class OllamaSettings(BaseSettings):
     base_url: AnyHttpUrl
     model_name: str = "qwen3:4b"
     request_timeout_seconds: float = 120.0
+    # Ollama's own server-launch default context window is much smaller
+    # than the model supports (verified: 4096, vs. qwen3:4b's advertised
+    # 262144) — every request must set options.num_ctx explicitly or it
+    # silently runs with whatever the server happened to start with.
+    num_ctx: int = 8192
+    max_retries: int = 3
+    retry_backoff_seconds: float = 1.0
 
 
 class GitSettings(BaseSettings):
@@ -82,6 +89,18 @@ class RerankerSettings(BaseSettings):
     fail_open: bool = True
 
 
+class ConversationSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CONVERSATION__", extra="forbid")
+
+    # Every Nth turn (assistant + user combined, per increment_turn_count)
+    # triggers a re-summarization dispatch.
+    summary_threshold: int = 10
+    # Default number of recent messages get_context_window()/
+    # SummarizeConversationUseCase pull when no caller-specific override
+    # is given.
+    context_window_turns: int = 20
+
+
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SECURITY__", extra="forbid")
 
@@ -119,6 +138,7 @@ class Settings(BaseSettings):
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     reranker: RerankerSettings = Field(default_factory=RerankerSettings)
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
 
 
 @lru_cache(maxsize=1)

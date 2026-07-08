@@ -60,12 +60,7 @@ class CrossEncoderReranker:
 
     def _predict_batch(self, pairs: list[tuple[str, str]]) -> list[float]:
         model = get_cross_encoder(self._model_name, self._max_length, self._device)
-        # CrossEncoder.predict's declared parameter type is a broad
-        # multi-modal union (it also accepts image/audio/video pair
-        # inputs) that a plain list[tuple[str, str]] doesn't structurally
-        # match despite being exactly what the text-only cross-encoder
-        # models this adapter targets expect — verified empirically.
-        scores = model.predict(pairs, batch_size=self._batch_size)  # type: ignore[arg-type]
+        scores = model.predict(pairs, batch_size=self._batch_size)
         return [float(s) for s in scores]
 
 

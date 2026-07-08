@@ -6,14 +6,18 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.retrieval_service import RetrievalService
+from app.application.use_cases.chat.manage_conversation import ManageConversationUseCase
+from app.application.use_cases.chat.summarize_conversation import SummarizeConversationUseCase
 from app.core.config import get_settings
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.conversation_repository import ConversationRepository
+from app.domain.ports.conversation_summary_dispatcher import ConversationSummaryDispatcherPort
 from app.domain.ports.embedding_port import EmbeddingPort
 from app.domain.ports.file_repository import FileRepository
 from app.domain.ports.git_port import GitPort
 from app.domain.ports.indexing_job_repository import IndexingJobRepository
 from app.domain.ports.indexing_task_dispatcher import IndexingTaskDispatcherPort
+from app.domain.ports.llm_port import LLMPort
 from app.domain.ports.message_repository import MessageRepository
 from app.domain.ports.refresh_token_repository import RefreshTokenRepository
 from app.domain.ports.repository_repository import RepositoryRepository
@@ -54,6 +58,11 @@ from app.infrastructure.db.repositories.sqlalchemy_workspace_repository import (
 from app.infrastructure.db.session import get_db_session
 from app.infrastructure.embeddings.bge_m3_adapter import BgeM3Adapter
 from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
+from app.infrastructure.llm.ollama_adapter import OllamaAdapter
+from app.infrastructure.llm.prompt_renderer import PromptRenderer
+from app.infrastructure.queue.null_conversation_summary_dispatcher import (
+    NullConversationSummaryDispatcher,
+)
 from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
 from app.infrastructure.reranker.cross_encoder_reranker import CrossEncoderReranker
 from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
@@ -166,6 +175,22 @@ def provide_reranker_port() -> RerankerPort:
     )
 
 
+def provide_llm_port() -> LLMPort:
+    # Not cached: OllamaAdapter holds only config values (base_url, model
+    # name, timeouts) — no in-process model weights, unlike
+    # BgeM3Adapter/CrossEncoderReranker — so a fresh instance per call
+    # costs nothing and avoids coupling its lifecycle to a cache.
+    settings = get_settings().ollama
+    return OllamaAdapter(
+        base_url=str(settings.base_url),
+        model=settings.model_name,
+        timeout_s=settings.request_timeout_seconds,
+        max_retries=settings.max_retries,
+        num_ctx=settings.num_ctx,
+        backoff_base_seconds=settings.retry_backoff_seconds,
+    )
+
+
 def provide_retrieval_service(session: DbSession) -> RetrievalService:
     # Not cached: chunk_repository/file_repository are session-scoped
     # (fresh per request), unlike the process-wide embedding/vector-store
@@ -176,4 +201,35 @@ def provide_retrieval_service(session: DbSession) -> RetrievalService:
         chunk_repository=provide_chunk_repository(session),
         file_repository=provide_file_repository(session),
         reranker_port=provide_reranker_port(),
+    )
+
+
+def provide_prompt_renderer() -> PromptRenderer:
+    # Not cached: wraps a jinja2 Environment over a small fixed template
+    # directory — cheap to construct, holds no per-request state.
+    return PromptRenderer()
+
+
+def provide_conversation_summary_dispatcher() -> ConversationSummaryDispatcherPort:
+    return NullConversationSummaryDispatcher()
+
+
+def provide_manage_conversation_use_case(session: DbSession) -> ManageConversationUseCase:
+    settings = get_settings().conversation
+    return ManageConversationUseCase(
+        conversation_repo=provide_conversation_repository(session),
+        message_repo=provide_message_repository(session),
+        summary_dispatcher=provide_conversation_summary_dispatcher(),
+        summary_threshold=settings.summary_threshold,
+    )
+
+
+def provide_summarize_conversation_use_case(session: DbSession) -> SummarizeConversationUseCase:
+    settings = get_settings().conversation
+    return SummarizeConversationUseCase(
+        conversation_repo=provide_conversation_repository(session),
+        message_repo=provide_message_repository(session),
+        llm_port=provide_llm_port(),
+        prompt_renderer=provide_prompt_renderer(),
+        context_turns=settings.context_window_turns,
     )

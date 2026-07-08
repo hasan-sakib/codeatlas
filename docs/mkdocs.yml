@@ -16,6 +16,8 @@ nav:
       - Vector Store: modules/vector_store.md
       - Retriever: modules/retriever.md
       - Reranker: modules/reranker.md
+      - LLM Service: modules/llm_service.md
+      - Conversation Service: modules/conversation_service.md
 theme:
   name: material
 markdown_extensions:

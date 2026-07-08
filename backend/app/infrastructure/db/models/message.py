@@ -25,6 +25,13 @@ class MessageModel(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # clock_timestamp(), not now() — verified directly against a real
+    # Postgres instance: now() returns the *transaction* start time, so
+    # multiple messages appended within one session/request (the normal
+    # case) all got an identical created_at, making
+    # MessageRepository.list_recent's `ORDER BY created_at DESC` produce
+    # non-deterministic chronological order. clock_timestamp() returns
+    # true per-statement wall-clock time instead.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False
     )

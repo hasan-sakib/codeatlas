@@ -1,0 +1,7 @@
+Rewrite the user's latest question into a fully self-contained query, resolving any pronouns or references using the conversation history below. Output only the rewritten query, nothing else.
+{% for turn in history %}
+{{ turn.role }}: {{ turn.content }}
+{% endfor %}
+Latest question: {{ query }}
+
+Rewritten query:

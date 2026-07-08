@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from app.domain.entities.conversation import Conversation
+from app.domain.exceptions import ConversationNotFoundError
 from app.domain.ports.conversation_repository import ConversationRepository
 from app.infrastructure.db.models.conversation import ConversationModel
 from app.infrastructure.db.repositories.base_repository import SqlAlchemyRepository
@@ -65,7 +66,7 @@ class SqlAlchemyConversationRepository(SqlAlchemyRepository, ConversationReposit
     async def increment_turn_count(self, conversation_id: UUID) -> int:
         model = await self.session.get(ConversationModel, conversation_id)
         if model is None:
-            raise ValueError(f"Conversation {conversation_id} not found")
+            raise ConversationNotFoundError(conversation_id)
         model.turn_count += 1
         await self.session.flush()
         return model.turn_count
