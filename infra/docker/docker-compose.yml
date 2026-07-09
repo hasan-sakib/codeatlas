@@ -116,7 +116,15 @@ services:
       qdrant:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
+      # `celery inspect ping` here runs as its own fresh CLI process — it
+      # never fires the `worker_init` signal (that only happens for the
+      # long-running `celery worker` process above), so celery_app.py's
+      # ensure_configured() never runs for it and it falls back to
+      # CelerySettings' localhost:6379/1 default, which doesn't resolve
+      # inside this container. Passing --broker/--result-backend
+      # explicitly (from the same env vars set below) sidesteps that —
+      # verified directly against a running container.
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app --broker=\"$$CELERY__BROKER_URL\" --result-backend=\"$$CELERY__RESULT_BACKEND\" inspect ping"]
       interval: 15s
       timeout: 10s
       retries: 5

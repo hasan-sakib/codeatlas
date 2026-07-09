@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from app.application.use_cases.indexing.run_indexing_pipeline import RunIndexingPipelineUseCase
 from app.domain.entities.indexing_job import IndexingJob, IndexingJobStatus
 from app.domain.entities.repository import Repository, RepositorySourceType, RepositoryStatus
@@ -78,6 +80,7 @@ def _build_use_case(
     git_port: FakeGitPort,
     embedding_port: FakeEmbeddingPort,
     vector_store: FakeVectorStorePort,
+    commit=None,
 ) -> RunIndexingPipelineUseCase:
     return RunIndexingPipelineUseCase(
         repository_repo=repo_repo,  # type: ignore[arg-type]
@@ -93,6 +96,7 @@ def _build_use_case(
         max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         excluded_dir_names=_EXCLUDED_DIR_NAMES,
         embedding_version="fake-embed-v1",
+        commit=commit,
     )
 
 
@@ -252,3 +256,97 @@ async def test_execute_marks_job_and_repository_failed_on_clone_error() -> None:
     assert failed_job.status == IndexingJobStatus.FAILED
     assert failed_job.error_message == "network unreachable"
     assert repo_repo.repositories[repository.id].status == RepositoryStatus.FAILED
+
+
+async def test_execute_commits_after_every_file_not_once_at_the_end(tmp_path: Path) -> None:
+    """A real Celery worker wraps the whole job in one session — without
+    a per-file commit, a crash mid-job rolls back every file processed
+    so far, even ones whose vectors already landed in Qdrant (which
+    isn't part of this transaction and won't roll back with it). This
+    pins the fix: commit() must fire after each file, not only once at
+    the very end."""
+    _write_fixture_repo(tmp_path)
+
+    repo_repo = FakeRepositoryRepository()
+    job_repo = FakeIndexingJobRepository()
+    file_repo = FakeFileRepository()
+    chunk_repo = FakeChunkRepository()
+    git_port = FakeGitPort(
+        ClonedRepo(local_path=tmp_path, commit_sha="abc123", default_branch="main", size_bytes=1)
+    )
+    embedding_port = FakeEmbeddingPort()
+    vector_store = FakeVectorStorePort()
+    commit_calls = 0
+
+    async def _commit() -> None:
+        nonlocal commit_calls
+        commit_calls += 1
+
+    repository = await repo_repo.add(_make_repository())
+    job = await job_repo.add(_make_job(repository.id))
+    use_case = _build_use_case(
+        repo_repo,
+        job_repo,
+        file_repo,
+        chunk_repo,
+        git_port,
+        embedding_port,
+        vector_store,
+        commit=_commit,
+    )
+    await use_case.execute(job.id)
+
+    # One commit per walked file (main.py, README.md, .gitignore) plus
+    # one for the WALKING->PARSING transition and one for COMPLETED —
+    # the exact count matters less than that it's clearly more than 1,
+    # proving progress is flushed incrementally rather than in a single
+    # end-of-job commit.
+    assert commit_calls >= 3 + 2
+
+
+async def test_execute_commits_the_failure_before_reraising(tmp_path: Path) -> None:
+    """If a caller's own transaction rolls back on the re-raised
+    exception (the real Celery task's db_session_context does exactly
+    this), the FAILED status must already be durably committed by then
+    — otherwise the rollback silently discards the only record that the
+    job failed."""
+
+    class _ExplodingGitPort:
+        async def clone(self, url: str, dest_dir: Path, *, shallow: bool = True) -> ClonedRepo:
+            raise RuntimeError("network unreachable")
+
+        async def get_blame(
+            self, repo_path: Path, file_path: str, start_line: int, end_line: int
+        ) -> list:  # type: ignore[type-arg]
+            return []
+
+    repo_repo = FakeRepositoryRepository()
+    job_repo = FakeIndexingJobRepository()
+    file_repo = FakeFileRepository()
+    chunk_repo = FakeChunkRepository()
+    embedding_port = FakeEmbeddingPort()
+    vector_store = FakeVectorStorePort()
+    commit_calls = 0
+
+    async def _commit() -> None:
+        nonlocal commit_calls
+        commit_calls += 1
+
+    repository = await repo_repo.add(_make_repository())
+    job = await job_repo.add(_make_job(repository.id))
+    use_case = _build_use_case(
+        repo_repo,
+        job_repo,
+        file_repo,
+        chunk_repo,
+        _ExplodingGitPort(),
+        embedding_port,
+        vector_store,
+        commit=_commit,
+    )
+
+    with pytest.raises(RuntimeError):
+        await use_case.execute(job.id)
+
+    assert commit_calls >= 1
+    assert job_repo.jobs[job.id].status == IndexingJobStatus.FAILED

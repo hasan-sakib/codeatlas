@@ -55,6 +55,7 @@ async def _run(job_id: UUID) -> None:
             max_file_size_bytes=settings.indexing.max_file_size_bytes,
             excluded_dir_names=settings.indexing.excluded_dir_names,
             embedding_version=settings.embedding.model_id,
+            commit=session.commit,
         )
         try:
             await use_case.execute(job_id)

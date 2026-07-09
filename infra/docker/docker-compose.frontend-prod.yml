@@ -1,0 +1,15 @@
+# Runs the frontend in production mode (the base Dockerfile's `runtime`
+# stage — `next build` + `node server.js`) while every other service
+# still uses docker-compose.dev.yml's bind-mounts/hot-reload. Needed
+# because `next dev`'s Turbopack (and, tested as a fallback, Webpack)
+# dev server proved unstable under this repo's Docker+bind-mount setup
+# on macOS/arm64 — intermittent "Cannot find module '[turbopack]_runtime.js'"
+# and stale build-manifest errors that broke the login Server Action.
+# The base docker-compose.yml's frontend service has no `ports:` (only
+# docker-compose.dev.yml adds one, tied to the dev command) — this file
+# adds it back for standalone use:
+#   docker compose -f docker-compose.yml -f docker-compose.frontend-prod.yml up -d --build frontend
+services:
+  frontend:
+    ports:
+      - "3000:3000"

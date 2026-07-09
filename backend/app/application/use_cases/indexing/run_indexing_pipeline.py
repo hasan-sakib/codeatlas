@@ -1,6 +1,7 @@
 import hashlib
 import shutil
 import tempfile
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,6 +47,11 @@ _MARKDOWN_EXTENSIONS = frozenset({".md", ".markdown"})
 _POSTGRES_EMBEDDING_GENERATION = 1
 
 
+async def _noop_commit() -> None:
+    """Default when the caller has nothing to commit — e.g. unit tests
+    with in-memory fakes, which have no real transaction boundary."""
+
+
 class RunIndexingPipelineUseCase:
     """Clone → walk → (parse+chunk | semantic-chunk) → embed → persist →
     upsert, one file at a time. Per-file processing (rather than global
@@ -77,6 +83,7 @@ class RunIndexingPipelineUseCase:
         max_file_size_bytes: int,
         excluded_dir_names: frozenset[str],
         embedding_version: str,
+        commit: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._repository_repo = repository_repo
         self._indexing_job_repo = indexing_job_repo
@@ -91,6 +98,16 @@ class RunIndexingPipelineUseCase:
         self._max_file_size_bytes = max_file_size_bytes
         self._excluded_dir_names = excluded_dir_names
         self._embedding_version = embedding_version
+        # Committing after every file (not once at the end of the whole
+        # job) is what makes a crash mid-job lose only the file in
+        # flight instead of every file processed so far — verified
+        # directly: a worker restart mid-job previously rolled back an
+        # entire 10+ minute run's worth of already-embedded-and-Qdrant-
+        # upserted files, since nothing had been committed to Postgres
+        # yet, and left those Qdrant points orphaned (no matching
+        # Postgres row) since Qdrant's own writes aren't part of this
+        # transaction and don't roll back with it.
+        self._commit = commit if commit is not None else _noop_commit
         self._metadata_extractor = MetadataExtractor(git_port)
 
     async def execute(self, job_id: UUID) -> None:
@@ -108,7 +125,13 @@ class RunIndexingPipelineUseCase:
             await self._run(job, repository, clone_dir)
         except Exception as exc:
             logger.error("indexing.failed", job_id=str(job_id), error=str(exc))
-            await self._mark_failed(job, repository, str(exc))
+            # Re-fetch rather than reuse the `job` snapshot from above:
+            # per-file commits inside _run() may have already advanced
+            # files_processed/chunks_total past what that snapshot
+            # holds, and marking failed from the stale copy would
+            # overwrite that real progress back to its starting values.
+            latest_job = await self._indexing_job_repo.get_by_id(job_id)
+            await self._mark_failed(latest_job or job, repository, str(exc))
             raise
         finally:
             shutil.rmtree(clone_dir, ignore_errors=True)
@@ -130,6 +153,7 @@ class RunIndexingPipelineUseCase:
         job = await self._update_job(
             job, status=IndexingJobStatus.PARSING, files_total=len(candidates)
         )
+        await self._commit()
 
         files_processed = 0
         chunks_total = 0
@@ -149,6 +173,11 @@ class RunIndexingPipelineUseCase:
             job = await self._update_job(
                 job, files_processed=files_processed, chunks_total=chunks_total
             )
+            # Commit per file, not once at the end of the whole job: a
+            # crash here must only cost the file in flight, and Qdrant's
+            # writes for already-processed files (not transactional with
+            # Postgres) must never outlive their Postgres row.
+            await self._commit()
 
         await self._repository_repo.update_status(
             repository.id, RepositoryStatus.READY, last_indexed_commit_sha=cloned.commit_sha
@@ -156,6 +185,7 @@ class RunIndexingPipelineUseCase:
         await self._update_job(
             job, status=IndexingJobStatus.COMPLETED, finished_at=datetime.now(UTC)
         )
+        await self._commit()
         logger.info(
             "indexing.completed",
             repository_id=str(repository.id),
@@ -343,3 +373,8 @@ class RunIndexingPipelineUseCase:
             finished_at=datetime.now(UTC),
         )
         await self._repository_repo.update_status(repository.id, RepositoryStatus.FAILED)
+        # execute()'s caller re-raises after this — without an explicit
+        # commit here, db_session_context's own exception handler would
+        # roll back this exact write, silently discarding the FAILED
+        # status it was trying to record.
+        await self._commit()

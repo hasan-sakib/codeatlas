@@ -34,7 +34,16 @@ services:
     volumes:
       - ../../frontend:/app
       - frontend_node_modules:/app/node_modules
-      - frontend_next_cache:/app/.next
+    # Next.js 16's Turbopack persistent disk cache lived here as a named
+    # volume before — it corrupted itself repeatedly ("Compaction
+    # failed: Another write batch or compaction is already active"),
+    # breaking server actions (login included) even right after a clear.
+    # tmpfs means it can never carry stale/corrupted state across a
+    # restart: it's wiped every time the container starts, and it's
+    # RAM-backed so it never touches the slower bind-mount I/O path that
+    # was likely triggering the corruption in the first place.
+    tmpfs:
+      - /app/.next:size=1g
     ports:
       - "3000:3000"
     command: ["npm", "run", "dev"]
@@ -66,4 +75,3 @@ services:
 
 volumes:
   frontend_node_modules:
-  frontend_next_cache:
