@@ -8,10 +8,12 @@ from app.api.streaming.events import DoneEvent, ProgressEvent, SSEEventName
 
 
 # The wire contract a future indexing-progress publisher must follow —
-# no such publisher exists yet (the indexing pipeline isn't wired up as
-# an orchestrated whole; Module 6 only registered
-# NullIndexingTaskDispatcher). Documented here since this is the one
-# real consumer of the channel until that publisher lands.
+# no such publisher exists yet. Module 21's RunIndexingPipelineUseCase
+# reports progress by updating the IndexingJob row directly (polled via
+# GET .../jobs/{job_id}), not by publishing to this channel; a live
+# push-progress publisher remains a follow-up. Documented here since
+# this is the one real consumer of the channel until that publisher
+# lands.
 #
 # Channel: f"indexing:progress:{job_id}"
 # Progress message:  {"stage": str, "percent": float | null, "message": str | null}

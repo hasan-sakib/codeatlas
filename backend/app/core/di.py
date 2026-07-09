@@ -66,10 +66,10 @@ from app.infrastructure.embeddings.bge_m3_adapter import BgeM3Adapter
 from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
 from app.infrastructure.llm.ollama_adapter import OllamaAdapter
 from app.infrastructure.llm.prompt_renderer import PromptRenderer
+from app.infrastructure.queue.celery_indexing_task_dispatcher import CeleryIndexingTaskDispatcher
 from app.infrastructure.queue.null_conversation_summary_dispatcher import (
     NullConversationSummaryDispatcher,
 )
-from app.infrastructure.queue.null_indexing_task_dispatcher import NullIndexingTaskDispatcher
 from app.infrastructure.reranker.cross_encoder_reranker import CrossEncoderReranker
 from app.infrastructure.vcs.git_python_adapter import GitPythonAdapter
 from app.infrastructure.vectorstore.qdrant_vector_store import QdrantVectorStore
@@ -128,7 +128,7 @@ def provide_git_port() -> GitPort:
 
 
 def provide_indexing_task_dispatcher() -> IndexingTaskDispatcherPort:
-    return NullIndexingTaskDispatcher()
+    return CeleryIndexingTaskDispatcher()
 
 
 @lru_cache(maxsize=1)

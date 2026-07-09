@@ -33,14 +33,13 @@ cache_misses_total = Counter(
 
 # --- Defined for the indexing pipeline, no live call site yet ---
 #
-# The Background Jobs / Queue Infrastructure module hasn't been built:
-# `worker` is still a `sleep infinity` placeholder (no Celery app exists
-# under app/workers/), and IndexingTaskDispatcherPort's only
-# implementation is NullIndexingTaskDispatcher — there is no real
-# indexing job execution or Celery queue anywhere to observe today.
-# Defined now so the eventual indexing pipeline has metrics to emit into
-# on day one rather than needing a Monitoring-module change alongside
-# its own; see docs/modules/monitoring.md.
+# Module 21's RunIndexingPipelineUseCase (app/application/use_cases/
+# indexing/run_indexing_pipeline.py) and CeleryIndexingTaskDispatcher now
+# execute real indexing jobs, but neither observes this histogram yet —
+# left as a follow-up rather than bundled into that change. Defined here
+# so the eventual instrumentation has a metric to emit into without
+# needing a Monitoring-module change alongside its own; see
+# docs/modules/monitoring.md.
 indexing_job_duration_seconds = Histogram(
     "indexing_job_duration_seconds",
     "Duration of an indexing-pipeline stage",

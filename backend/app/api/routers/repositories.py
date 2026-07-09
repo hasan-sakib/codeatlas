@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import require_current_user, require_repository_access, require_workspace_access
 from app.api.middleware.rate_limit import rate_limit_by_user
-from app.api.schemas.repository import CreateRepositoryRequest, RepositoryResponse
+from app.api.schemas.repository import (
+    CreateRepositoryRequest,
+    IndexingJobResponse,
+    RepositoryResponse,
+)
 from app.application.use_cases.indexing.create_repository import CreateRepositoryUseCase
 from app.application.use_cases.indexing.delete_repository import DeleteRepositoryUseCase
 from app.application.use_cases.indexing.list_repositories import ListRepositoriesUseCase
@@ -15,6 +19,7 @@ from app.core.di import (
     provide_indexing_task_dispatcher,
     provide_repository_repository,
 )
+from app.domain.entities.indexing_job import IndexingJob
 from app.domain.entities.repository import Repository
 from app.domain.entities.user import User
 from app.domain.entities.workspace import Workspace
@@ -98,3 +103,44 @@ async def delete_repository(
     # RepositoryNotFoundError propagates to the global domain exception
     # handler (404) — see app/api/middleware/error_handling.py.
     await use_case.execute(workspace.id, repository_id)
+
+
+def _job_to_response(job: IndexingJob) -> IndexingJobResponse:
+    return IndexingJobResponse(
+        id=job.id,
+        repository_id=job.repository_id,
+        celery_task_id=job.celery_task_id,
+        status=job.status,
+        stage_detail=job.stage_detail,
+        files_total=job.files_total,
+        files_processed=job.files_processed,
+        chunks_total=job.chunks_total,
+        error_message=job.error_message,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        created_at=job.created_at,
+    )
+
+
+@router.get("/{repository_id}/jobs", response_model=list[IndexingJobResponse])
+async def list_indexing_jobs(
+    repository: Annotated[Repository, Depends(require_repository_access)],
+    job_repo: Annotated[IndexingJobRepository, Depends(provide_indexing_job_repository)],
+) -> list[IndexingJobResponse]:
+    jobs = await job_repo.list_by_repository(repository.id)
+    return [_job_to_response(j) for j in jobs]
+
+
+@router.get("/{repository_id}/jobs/{job_id}", response_model=IndexingJobResponse)
+async def get_indexing_job(
+    job_id: UUID,
+    repository: Annotated[Repository, Depends(require_repository_access)],
+    job_repo: Annotated[IndexingJobRepository, Depends(provide_indexing_job_repository)],
+) -> IndexingJobResponse:
+    job = await job_repo.get_by_id(job_id)
+    if job is None or job.repository_id != repository.id:
+        # Same anti-enumeration rationale as require_repository_access: a
+        # job id belonging to a different repository must 404 exactly
+        # like a nonexistent one, not leak that it exists elsewhere.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Indexing job not found")
+    return _job_to_response(job)

@@ -82,6 +82,45 @@ def test_repository_is_isolated_to_its_workspace(api_client: TestClient) -> None
     assert cross_resp.status_code == 404
 
 
+def test_indexing_job_status_is_pollable_and_repository_scoped(api_client: TestClient) -> None:
+    token = register_and_login(api_client, "jobstatus.repo@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    workspace_a = _create_workspace(api_client, headers, "Job Status A")
+    workspace_b = _create_workspace(api_client, headers, "Job Status B")
+
+    create_resp = api_client.post(
+        f"/api/v1/workspaces/{workspace_a}/repositories",
+        json={"git_url": "https://github.com/org/jobstatus.git"},
+        headers=headers,
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    repository_id = create_resp.json()["id"]
+
+    list_resp = api_client.get(
+        f"/api/v1/workspaces/{workspace_a}/repositories/{repository_id}/jobs", headers=headers
+    )
+    assert list_resp.status_code == 200
+    jobs = list_resp.json()
+    assert len(jobs) == 1
+    job_id = jobs[0]["id"]
+    assert jobs[0]["status"] == "queued"
+    assert jobs[0]["repository_id"] == repository_id
+
+    get_resp = api_client.get(
+        f"/api/v1/workspaces/{workspace_a}/repositories/{repository_id}/jobs/{job_id}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == job_id
+
+    # Same job id, wrong workspace in the URL — must 404, not leak it.
+    cross_resp = api_client.get(
+        f"/api/v1/workspaces/{workspace_b}/repositories/{repository_id}/jobs/{job_id}",
+        headers=headers,
+    )
+    assert cross_resp.status_code == 404
+
+
 def test_repository_routes_require_workspace_ownership(api_client: TestClient) -> None:
     owner_token = register_and_login(api_client, "owner.repo@example.com")
     other_token = register_and_login(api_client, "other.repo@example.com")

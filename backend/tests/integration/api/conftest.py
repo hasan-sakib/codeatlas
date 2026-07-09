@@ -19,6 +19,14 @@ async def api_client(postgres_container, redis_container, monkeypatch: pytest.Mo
     redis_port = redis_container.get_exposed_port(6379)
     redis_url = f"redis://{redis_host}:{redis_port}/0"
     monkeypatch.setenv("REDIS__URL", redis_url)
+    # CreateRepositoryUseCase now dispatches through CeleryIndexingTaskDispatcher
+    # (Module 21), which really does try to reach a broker — without this,
+    # it falls back to CelerySettings' localhost:6379/1 default and either
+    # hangs or fails outside an environment that happens to have a real
+    # Redis there. Same container, different db index than REDIS__URL
+    # above, matching .env.example's convention.
+    monkeypatch.setenv("CELERY__BROKER_URL", f"redis://{redis_host}:{redis_port}/1")
+    monkeypatch.setenv("CELERY__RESULT_BACKEND", f"redis://{redis_host}:{redis_port}/1")
     monkeypatch.setenv("QDRANT__URL", "http://localhost:6333")
     monkeypatch.setenv("OLLAMA__BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("SECURITY__JWT_SECRET_KEY", "integration-test-secret-key-value")

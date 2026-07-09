@@ -24,6 +24,7 @@ nav:
       - Frontend: modules/frontend.md
       - Deployment: modules/deployment.md
       - Monitoring: modules/monitoring.md
+      - Indexing Pipeline: modules/indexing_pipeline.md
 theme:
   name: material
 markdown_extensions:

@@ -131,6 +131,26 @@ class AgentSettings(BaseSettings):
     context_chunk_count: int = 8
 
 
+class CelerySettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CELERY__", extra="forbid")
+
+    # A different Redis DB index than REDIS__URL's default (0) —
+    # independently configurable, not silently coupled to the app's own
+    # cache/rate-limit/token-blacklist keys, even though both commonly
+    # point at the same physical Redis instance in this deployment.
+    broker_url: RedisDsn = RedisDsn("redis://localhost:6379/1")
+    result_backend: RedisDsn = RedisDsn("redis://localhost:6379/1")
+
+
+class IndexingSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="INDEXING__", extra="forbid")
+
+    max_file_size_bytes: int = 1_000_000  # 1MB — larger files are almost never hand-written source
+    excluded_dir_names: frozenset[str] = frozenset(
+        {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".next", "target"}
+    )
+
+
 class RateLimitSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="RATE_LIMIT__", extra="forbid")
 
@@ -179,6 +199,8 @@ class Settings(BaseSettings):
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    celery: CelerySettings = Field(default_factory=CelerySettings)
+    indexing: IndexingSettings = Field(default_factory=IndexingSettings)
 
 
 @lru_cache(maxsize=1)

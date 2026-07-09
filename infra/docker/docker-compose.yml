@@ -55,6 +55,11 @@ services:
       QDRANT__URL: http://qdrant:6333
       REDIS__URL: redis://redis:6379/0
       OLLAMA__BASE_URL: http://ollama:11434
+      # CeleryIndexingTaskDispatcher.dispatch() (Module 21) enqueues from
+      # this process — same localhost-vs-service-DNS-name override as the
+      # four keys above, for the same reason.
+      CELERY__BROKER_URL: redis://redis:6379/1
+      CELERY__RESULT_BACKEND: redis://redis:6379/1
     volumes:
       - model_cache:/data/hf-cache
     networks:
@@ -84,10 +89,12 @@ services:
     build:
       context: ../../backend
       dockerfile: Dockerfile
-    # Placeholder command: the Celery app doesn't exist until the
-    # Background Jobs / Queue infrastructure module is implemented.
-    # Replace with: celery -A app.workers.celery_worker worker -Q chat,indexing
-    command: ["sh", "-c", "echo 'worker placeholder - no Celery app yet' && sleep infinity"]
+    # `indexing` is the only queue with a real task registered today
+    # (Module 21's index_repository_task) — `chat` (conversation
+    # summarization) still routes through NullConversationSummaryDispatcher,
+    # so there's nothing to consume there yet; add it here once that
+    # dispatcher is replaced.
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "indexing", "--loglevel=info"]
     env_file:
       - ../../.env
     environment:
@@ -95,6 +102,8 @@ services:
       QDRANT__URL: http://qdrant:6333
       REDIS__URL: redis://redis:6379/0
       OLLAMA__BASE_URL: http://ollama:11434
+      CELERY__BROKER_URL: redis://redis:6379/1
+      CELERY__RESULT_BACKEND: redis://redis:6379/1
     volumes:
       - model_cache:/data/hf-cache
     networks:
@@ -106,6 +115,12 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   frontend:
     build:
