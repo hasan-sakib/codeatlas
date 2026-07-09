@@ -1,11 +1,13 @@
 import asyncio
 import time
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, TypeVar
 from uuid import UUID
 
 import structlog
 
 from app.application.services.fusion import reciprocal_rank_fusion
+from app.core.observability.metrics import retrieval_duration_seconds
 from app.domain.entities.chunk import Chunk
 from app.domain.ports.chunk_repository import ChunkRepository
 from app.domain.ports.embedding_port import EmbeddingPort
@@ -17,6 +19,16 @@ from app.domain.value_objects.retrieval_query import RetrievalQuery
 
 logger = structlog.get_logger(__name__)
 
+T = TypeVar("T")
+
+
+async def _timed(stage: str, awaitable: Awaitable[T]) -> T:
+    start = time.monotonic()
+    try:
+        return await awaitable
+    finally:
+        retrieval_duration_seconds.labels(stage=stage).observe(time.monotonic() - start)
+
 
 class RetrievalService:
     """Framework-agnostic hybrid retrieval: encode -> parallel dense+sparse
@@ -26,9 +38,11 @@ class RetrievalService:
     endpoints, so retrieval behavior never diverges between the two call
     paths.
 
-    Emits retrieval timing via structlog rather than a
-    `retrieval_duration_seconds` Prometheus metric — Module 20
-    (Monitoring) doesn't exist yet.
+    Emits both a structlog `retrieval.completed` event (total wall-clock
+    duration) and a per-stage `retrieval_duration_seconds` Prometheus
+    histogram (stage=dense|sparse|fuse|rerank) — the log line answers
+    "how long did this one request take," the metric answers "which
+    stage is slow across many requests."
     """
 
     def __init__(
@@ -50,7 +64,9 @@ class RetrievalService:
         start = time.monotonic()
         fused = await self._search_fuse_and_hydrate(query)
 
-        reranked = await self._reranker.score(query.query_text, fused) if fused else []
+        reranked = (
+            await _timed("rerank", self._reranker.score(query.query_text, fused)) if fused else []
+        )
         result = reranked[: query.n]
 
         logger.info(
@@ -73,26 +89,32 @@ class RetrievalService:
         qdrant_filters = _build_qdrant_filters(query)
 
         dense_results, sparse_results = await asyncio.gather(
-            self._vector_store.search_dense(
-                embedding.dense,
-                workspace_id=query.workspace_id,
-                limit=query.k1,
-                repository_id=query.repository_id,
-                filters=qdrant_filters,
+            _timed(
+                "dense",
+                self._vector_store.search_dense(
+                    embedding.dense,
+                    workspace_id=query.workspace_id,
+                    limit=query.k1,
+                    repository_id=query.repository_id,
+                    filters=qdrant_filters,
+                ),
             ),
-            self._vector_store.search_sparse(
-                embedding.sparse,
-                workspace_id=query.workspace_id,
-                limit=query.k1,
-                repository_id=query.repository_id,
-                filters=qdrant_filters,
+            _timed(
+                "sparse",
+                self._vector_store.search_sparse(
+                    embedding.sparse,
+                    workspace_id=query.workspace_id,
+                    limit=query.k1,
+                    repository_id=query.repository_id,
+                    filters=qdrant_filters,
+                ),
             ),
         )
         dense_ids = [r.chunk_id for r in dense_results]
         sparse_ids = [r.chunk_id for r in sparse_results]
         if not dense_ids and not sparse_ids:
             return []
-        return await self._fuse_and_hydrate(query, dense_ids, sparse_ids)
+        return await _timed("fuse", self._fuse_and_hydrate(query, dense_ids, sparse_ids))
 
     async def _fuse_and_hydrate(
         self, query: RetrievalQuery, dense_ids: list[UUID], sparse_ids: list[UUID]

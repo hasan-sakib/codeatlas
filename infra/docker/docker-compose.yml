@@ -68,10 +68,17 @@ services:
       qdrant:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      # /health/ready (Module 20), not the bare /health liveness check —
+      # this was DESIGN.md §22's healthcheck matrix all along ("backend-api:
+      # GET /health/ready (checks DB, Redis, Qdrant, Ollama reachability)"),
+      # just unimplemented until now. depends_on: condition: service_healthy
+      # (frontend, below) means the frontend now genuinely waits for every
+      # backend dependency to be reachable, not just for uvicorn to be up.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
       interval: 10s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 300s
 
   worker:
     build:

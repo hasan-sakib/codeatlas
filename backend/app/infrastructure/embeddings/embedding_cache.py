@@ -4,9 +4,11 @@ from typing import Protocol
 
 from redis.asyncio import Redis
 
+from app.core.observability.metrics import cache_hits_total, cache_misses_total
 from app.domain.value_objects.embedding_result import EmbeddingResult
 
 _KEY_PREFIX = "embedding:cache:"
+_CACHE_NAME = "embedding"
 
 
 class EmbeddingCachePort(Protocol):
@@ -26,6 +28,9 @@ class RedisEmbeddingCache(EmbeddingCachePort):
         for key, raw in zip(keys, raw_values, strict=True):
             if raw is not None:
                 results[key] = _deserialize(raw)
+                cache_hits_total.labels(cache_name=_CACHE_NAME).inc()
+            else:
+                cache_misses_total.labels(cache_name=_CACHE_NAME).inc()
         return results
 
     async def set_many(self, entries: Mapping[str, EmbeddingResult], ttl_seconds: int) -> None:

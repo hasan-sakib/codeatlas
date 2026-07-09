@@ -1,10 +1,15 @@
 import pytest
+from prometheus_client import REGISTRY
 from redis.asyncio import Redis
 
 from app.domain.value_objects.embedding_result import EmbeddingResult
 from app.infrastructure.embeddings.embedding_cache import RedisEmbeddingCache
 
 pytestmark = pytest.mark.integration
+
+
+def _cache_metric(metric_name: str) -> float:
+    return REGISTRY.get_sample_value(metric_name, {"cache_name": "embedding"}) or 0.0
 
 
 async def test_get_many_on_empty_cache_returns_empty_dict(redis_client: Redis) -> None:
@@ -42,3 +47,16 @@ async def test_set_many_applies_the_given_ttl(redis_client: Redis) -> None:
 
     ttl = await redis_client.ttl("embedding:cache:key-ttl")
     assert 0 < ttl <= 60
+
+
+async def test_get_many_increments_hit_and_miss_counters(redis_client: Redis) -> None:
+    cache = RedisEmbeddingCache(redis_client)
+    result = EmbeddingResult(dense=[0.1], sparse={}, model_id="m")
+    await cache.set_many({"key-present": result}, ttl_seconds=60)
+    before_hits = _cache_metric("cache_hits_total")
+    before_misses = _cache_metric("cache_misses_total")
+
+    await cache.get_many(["key-present", "key-absent"])
+
+    assert _cache_metric("cache_hits_total") == before_hits + 1
+    assert _cache_metric("cache_misses_total") == before_misses + 1

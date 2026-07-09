@@ -146,7 +146,7 @@ def clear_embedding_port_cache() -> None:
 
 
 @lru_cache(maxsize=1)
-def _get_qdrant_client() -> AsyncQdrantClient:
+def provide_qdrant_client() -> AsyncQdrantClient:
     settings = get_settings().qdrant
     return AsyncQdrantClient(
         url=str(settings.url),
@@ -158,13 +158,13 @@ def _get_qdrant_client() -> AsyncQdrantClient:
 @lru_cache(maxsize=1)
 def provide_vector_store() -> VectorStorePort:
     settings = get_settings().qdrant
-    return QdrantVectorStore(_get_qdrant_client(), collection_prefix=settings.collection_prefix)
+    return QdrantVectorStore(provide_qdrant_client(), collection_prefix=settings.collection_prefix)
 
 
 def clear_vector_store_cache() -> None:
     """Test-only helper, mirrors clear_settings_cache/clear_redis_client_cache."""
     provide_vector_store.cache_clear()
-    _get_qdrant_client.cache_clear()
+    provide_qdrant_client.cache_clear()
 
 
 def provide_reranker_port() -> RerankerPort:

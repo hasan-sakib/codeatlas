@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from prometheus_client import REGISTRY
+
 from app.application.services.retrieval_service import RetrievalService
 from app.domain.entities.chunk import Chunk, ChunkType, SymbolKind
 from app.domain.entities.file import File
@@ -13,6 +15,10 @@ from tests.unit.application.services.fakes import (
     FakeReranker,
     FakeVectorStore,
 )
+
+
+def _stage_count(stage: str) -> float:
+    return REGISTRY.get_sample_value("retrieval_duration_seconds_count", {"stage": stage}) or 0.0
 
 
 def _make_chunk(chunk_id: UUID, file_id: UUID, **overrides: object) -> Chunk:
@@ -214,6 +220,24 @@ async def test_result_sliced_to_n() -> None:
     results = await service.retrieve(query)
 
     assert [r.chunk_id for r in results] == ids[:2]
+
+
+async def test_retrieve_observes_a_duration_for_each_pipeline_stage() -> None:
+    file_id, chunk_id, workspace_id = uuid4(), uuid4(), uuid4()
+    vector_store = FakeVectorStore(dense_results=[SearchResult(chunk_id, 0.9)])
+    chunk_repo = FakeChunkRepository([_make_chunk(chunk_id, file_id)])
+    file_repo = FakeFileRepository([_make_file(file_id, "app.py")])
+    service = RetrievalService(
+        FakeEmbeddingPort(), vector_store, chunk_repo, file_repo, FakeReranker()
+    )
+    before = {stage: _stage_count(stage) for stage in ("dense", "sparse", "fuse", "rerank")}
+
+    await service.retrieve(
+        RetrievalQuery(workspace_id=workspace_id, query_text="q", embedding_version="v1")
+    )
+
+    for stage, count_before in before.items():
+        assert _stage_count(stage) == count_before + 1, f"stage={stage!r} was not observed"
 
 
 async def test_retrieve_without_rerank_skips_the_reranker_and_returns_fused_results() -> None:

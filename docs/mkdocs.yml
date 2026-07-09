@@ -23,6 +23,7 @@ nav:
       - REST API: modules/rest_api.md
       - Frontend: modules/frontend.md
       - Deployment: modules/deployment.md
+      - Monitoring: modules/monitoring.md
 theme:
   name: material
 markdown_extensions:

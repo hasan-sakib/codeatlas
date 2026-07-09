@@ -5,6 +5,7 @@ import httpx
 import structlog
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
+from app.core.observability.metrics import llm_tokens_total
 from app.domain.exceptions import LLMUnavailableError
 from app.domain.value_objects.llm_completion_result import LLMCompletionResult
 
@@ -117,12 +118,15 @@ class OllamaAdapter:
                 f"Ollama unavailable after {self._max_retries} attempt(s): {exc}"
             ) from exc
 
-        return LLMCompletionResult(
+        result = LLMCompletionResult(
             text=str(data.get("response", "")),
             prompt_tokens=int(data.get("prompt_eval_count", 0)),  # type: ignore[call-overload]
             completion_tokens=int(data.get("eval_count", 0)),  # type: ignore[call-overload]
             finish_reason=str(data.get("done_reason", "unknown")),
         )
+        llm_tokens_total.labels(direction="prompt").inc(result.prompt_tokens)
+        llm_tokens_total.labels(direction="completion").inc(result.completion_tokens)
+        return result
 
     async def _post_once(self, payload: dict[str, object]) -> dict[str, object]:
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
@@ -157,6 +161,15 @@ class OllamaAdapter:
                 text = chunk.get("response", "")
                 if text:
                     yield text
+                if chunk.get("done"):
+                    # Only Ollama's final NDJSON line (done=true) carries
+                    # prompt_eval_count/eval_count — every earlier chunk
+                    # omits them entirely, verified directly against a
+                    # live streaming call.
+                    llm_tokens_total.labels(direction="prompt").inc(
+                        chunk.get("prompt_eval_count", 0)
+                    )
+                    llm_tokens_total.labels(direction="completion").inc(chunk.get("eval_count", 0))
         except httpx.HTTPError as exc:
             raise LLMUnavailableError(f"Ollama stream failed mid-response: {exc}") from exc
         finally:

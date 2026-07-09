@@ -11,6 +11,7 @@ from app.api.routers import auth, conversations, docs, health, repositories, sea
 from app.core.config import get_settings
 from app.core.di import provide_embedding_port
 from app.core.logging import configure_logging
+from app.core.observability.instrumentation import setup_prometheus_instrumentator
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="CodeAtlas", version="0.1.0", lifespan=lifespan)
     register_exception_handlers(app)
+    setup_prometheus_instrumentator(app)
 
     app.add_middleware(
         CORSMiddleware,

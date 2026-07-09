@@ -2,10 +2,15 @@ import json
 
 import httpx
 import pytest
+from prometheus_client import REGISTRY
 
 from app.domain.exceptions import LLMUnavailableError
 from app.infrastructure.llm import ollama_adapter as oa
 from app.infrastructure.llm.ollama_adapter import OllamaAdapter
+
+
+def _tokens_total(direction: str) -> float:
+    return REGISTRY.get_sample_value("llm_tokens_total", {"direction": direction}) or 0.0
 
 
 def _mock_client_factory(handler: object) -> type:
@@ -170,6 +175,39 @@ async def test_stream_complete_raises_llm_unavailable_when_connection_fails(
     with pytest.raises(LLMUnavailableError):
         async for _ in _adapter(max_retries=2, backoff_base_seconds=0.001).stream_complete("hi"):
             pass
+
+
+async def test_complete_increments_llm_tokens_total(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": "hi", "prompt_eval_count": 7, "eval_count": 3})
+
+    monkeypatch.setattr(oa.httpx, "AsyncClient", _mock_client_factory(handler))
+    before_prompt, before_completion = _tokens_total("prompt"), _tokens_total("completion")
+
+    await _adapter().complete("say hi")
+
+    assert _tokens_total("prompt") == before_prompt + 7
+    assert _tokens_total("completion") == before_completion + 3
+
+
+async def test_stream_complete_increments_llm_tokens_total_from_final_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _ndjson(
+            {"response": "Hello", "done": False},
+            {"response": "", "done": True, "prompt_eval_count": 11, "eval_count": 22},
+        )
+        return httpx.Response(200, content=body)
+
+    monkeypatch.setattr(oa.httpx, "AsyncClient", _mock_client_factory(handler))
+    before_prompt, before_completion = _tokens_total("prompt"), _tokens_total("completion")
+
+    async for _ in _adapter().stream_complete("hi"):
+        pass
+
+    assert _tokens_total("prompt") == before_prompt + 11
+    assert _tokens_total("completion") == before_completion + 22
 
 
 async def test_stream_complete_does_not_retry_on_non_retryable_4xx(
