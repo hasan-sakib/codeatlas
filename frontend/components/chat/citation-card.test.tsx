@@ -17,7 +17,7 @@ describe("CitationCard", () => {
   });
 
   it("renders symbol name, source badge, and code preview when provided (SearchResultItem shape)", () => {
-    render(
+    const { container } = render(
       <CitationCard
         filePath="app/main.py"
         startLine={1}
@@ -29,8 +29,44 @@ describe("CitationCard", () => {
       />,
     );
 
-    expect(screen.getByText("create_app")).toBeInTheDocument();
+    // "create_app" now legitimately appears twice: the symbol badge and
+    // a syntax-highlighted token inside the code block — both expected.
+    expect(screen.getAllByText("create_app").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("dense")).toBeInTheDocument();
-    expect(screen.getByText("def create_app(): ...")).toBeInTheDocument();
+    // Syntax highlighting tokenizes the code into multiple <span>s (one
+    // per keyword/identifier), so the text is no longer a single node —
+    // toHaveTextContent checks the concatenated content instead.
+    expect(container).toHaveTextContent("def create_app(): ...");
+  });
+
+  it("syntax-highlights code for a recognized file extension", () => {
+    const { container } = render(
+      <CitationCard
+        filePath="app/main.py"
+        startLine={1}
+        endLine={5}
+        score={0.5}
+        text="def create_app(): ..."
+      />,
+    );
+
+    // react-syntax-highlighter tokenizes into several <span>s; a plain
+    // <pre><code> fallback would only ever produce a single text node.
+    expect(container.querySelectorAll("code span").length).toBeGreaterThan(1);
+  });
+
+  it("falls back to a plain <pre><code> block for an unrecognized extension", () => {
+    const { container } = render(
+      <CitationCard
+        filePath="app/data.unknownext"
+        startLine={1}
+        endLine={2}
+        score={0.5}
+        text="some raw content"
+      />,
+    );
+
+    expect(container.querySelector("pre code")).toHaveTextContent("some raw content");
+    expect(container.querySelectorAll("code span").length).toBe(0);
   });
 });
