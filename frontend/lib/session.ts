@@ -5,6 +5,21 @@ import { cookies } from "next/headers";
 
 export const SESSION_COOKIE_NAME = "codeatlas_session";
 
+/** Shared between `createSession` (Server Action/Route Handler writes)
+ * and proxy.ts (the only other place allowed to write this cookie —
+ * see proxy.ts's own comment for why the refresh-and-rewrite logic
+ * lives there and not in the DAL). */
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  // 30 days, matching the backend's refresh-token lifetime — a longer
+  // cookie is pointless since the refresh token behind it will be
+  // rejected by the backend once it expires.
+  maxAge: 60 * 60 * 24 * 30,
+};
+
 // Signs the session cookie itself (Next.js's own secret) — unrelated to
 // the backend's JWT_SECRET_KEY, which the browser/Next.js server never
 // see or verify. This cookie's payload just carries the backend's
@@ -50,16 +65,7 @@ export async function decryptSession(token: string): Promise<SessionPayload | nu
 export async function createSession(payload: SessionPayload): Promise<void> {
   const encrypted = await encryptSession(payload);
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, encrypted, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    // 30 days, matching the backend's refresh-token lifetime — a longer
-    // cookie is pointless since the refresh token behind it will be
-    // rejected by the backend once it expires.
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  cookieStore.set(SESSION_COOKIE_NAME, encrypted, SESSION_COOKIE_OPTIONS);
 }
 
 export async function readSessionCookie(): Promise<string | undefined> {

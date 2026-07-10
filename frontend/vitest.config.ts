@@ -13,6 +13,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // Next.js resolves this build-time sentinel specially; plain
+      // Vite/Vitest doesn't know it at all. See test-stubs/server-only.ts.
+      "server-only": path.resolve(__dirname, "test-stubs/server-only.ts"),
     },
   },
 });

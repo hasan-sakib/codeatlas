@@ -8,7 +8,20 @@
 # The base docker-compose.yml's frontend service has no `ports:` (only
 # docker-compose.dev.yml adds one, tied to the dev command) — this file
 # adds it back for standalone use:
-#   docker compose -f docker-compose.yml -f docker-compose.frontend-prod.yml up -d --build frontend
+#   docker compose -f docker-compose.yml -f docker-compose.frontend-prod.yml up -d --build --no-deps frontend
+#
+# --no-deps is not optional here — verified directly, twice: omitting it
+# makes Compose recreate postgres/redis/qdrant/backend-api too (this
+# file's merge doesn't include docker-compose.dev.yml, so those services'
+# `up` target reverts to the base file's non-dev config — no bind mounts,
+# no host-published ports). Both times this silently dropped backend-api's
+# --reload and every other service's host port mapping, and left the
+# worker's cached DB/Qdrant connections pointing at now-replaced
+# containers (see run_indexing_pipeline's per-file-commit fix and
+# celery_app.py's run_in_worker_loop docstring for why that class of bug
+# is worth avoiding). If dependencies get recreated anyway, restore dev
+# mode with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis qdrant backend-api worker
 services:
   frontend:
     ports:
